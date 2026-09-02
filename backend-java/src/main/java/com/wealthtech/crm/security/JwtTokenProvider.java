@@ -1,0 +1,80 @@
+package com.wealthtech.crm.security;
+
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+
+@Component
+@Slf4j
+public class JwtTokenProvider {
+
+    @Value("${app.jwt-secret:9a2f8c4e7b1a6d3e8f5c2b9a7e4d1f8c3b6a9e2f5c8d1b4e7a0f3c6d9b2e5a8f}")
+    private String jwtSecret;
+
+    @Value("${app.jwt.expiration-ms:900000}") // 15 minutes default
+    private long expirationInMs;
+
+    private SecretKey getSigningKey() {
+        byte[] keyBytes;
+        try {
+            keyBytes = Decoders.BASE64.decode(jwtSecret);
+        } catch (Exception e) {
+            keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        }
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    // Generate token from Authentication object
+    public String generateToken(Authentication authentication) {
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + expirationInMs);
+
+        return Jwts.builder()
+                .subject(userDetails.getUsername()) // Email is stored as username in UserDetails
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    // Extract email (subject) from JWT token
+    public String getEmailFromJwt(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        return claims.getSubject();
+    }
+
+    // Validate JWT token signature and expiration
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token);
+            return true;
+        } catch (MalformedJwtException ex) {
+            log.error("Invalid JWT token format");
+        } catch (ExpiredJwtException ex) {
+            log.error("Expired JWT token");
+        } catch (UnsupportedJwtException ex) {
+            log.error("Unsupported JWT token");
+        } catch (IllegalArgumentException ex) {
+            log.error("JWT claims string is empty");
+        }
+        return false;
+    }
+}
