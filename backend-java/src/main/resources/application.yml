@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+  
+spring:
+  application:
+    name: wealth-tech-crm-java
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wealth_tech_crm_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+      # Automatically creates/updates DB tables in dev mode
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# JWT Custom Security Properties
+jwt:
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971 # 256-bit Secret Key
+  access-token-expiration-ms: 900000     # 15 Minutes (15 * 60 * 1000)
+  refresh-token-expiration-ms: 604800000 # 7 Days (7 * 24 * 60 * 60 * 1000)
+
+# spring.application.name=crm-backend
