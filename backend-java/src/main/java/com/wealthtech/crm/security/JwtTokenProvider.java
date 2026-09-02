@@ -20,8 +20,11 @@ public class JwtTokenProvider {
     @Value("${app.jwt-secret:9a2f8c4e7b1a6d3e8f5c2b9a7e4d1f8c3b6a9e2f5c8d1b4e7a0f3c6d9b2e5a8f}")
     private String jwtSecret;
 
-    @Value("${app.jwt.expiration-ms:900000}") // 15 minutes default
+    @Value("${app.jwt.expiration-ms:900000}") // 15 minutes default for access token
     private long expirationInMs;
+
+    @Value("${app.jwt.refresh-expiration-ms:604800000}") // 7 days default for refresh token
+    private long refreshExpirationInMs;
 
     private SecretKey getSigningKey() {
         byte[] keyBytes;
@@ -33,14 +36,27 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    // Generate token from Authentication object
+    // Generate Access Token (15 mins)
     public String generateToken(Authentication authentication) {
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationInMs);
 
         return Jwts.builder()
-                .subject(userDetails.getUsername()) // Email is stored as username in UserDetails
+                .subject(userDetails.getUsername())
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    // Generate Refresh Token (7 days) using Email
+    public String generateRefreshToken(String email) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + refreshExpirationInMs);
+
+        return Jwts.builder()
+                .subject(email)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
