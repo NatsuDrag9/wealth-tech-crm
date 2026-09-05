@@ -2,6 +2,8 @@ package com.wealthtech.crm.modules.usermanager.entity;
 
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.*;
 @Entity
@@ -27,5 +29,6 @@ public class Permission {
     private String contentType;
 
     @ManyToMany(mappedBy = "permissions")
+    @JsonIgnore
     private Set<Role> roles;
 }

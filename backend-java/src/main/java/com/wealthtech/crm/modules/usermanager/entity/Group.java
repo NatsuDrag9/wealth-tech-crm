@@ -3,6 +3,8 @@ package com.wealthtech.crm.modules.usermanager.entity;
 import java.time.LocalDateTime;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -28,9 +30,11 @@ public class Group {
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy="group")
+    @JsonIgnore
     private Set<Role> roles;
 
     @OneToMany(mappedBy = "group")
+    @JsonIgnore
     private Set<User> users;
 
     @PrePersist

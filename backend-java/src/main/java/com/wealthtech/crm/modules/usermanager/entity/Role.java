@@ -3,6 +3,8 @@ package com.wealthtech.crm.modules.usermanager.entity;
 import java.time.LocalDateTime;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -30,6 +32,7 @@ public class Role {
     private Group group;
 
     @OneToMany(mappedBy = "role")
+    @JsonIgnore
     private Set<User> users;
 
     @ManyToMany
@@ -38,6 +41,7 @@ public class Role {
         joinColumns = @JoinColumn(name = "role_id"),
         inverseJoinColumns = @JoinColumn(name = "permission_id")
     )
+    @JsonIgnore
     private Set<Permission> permissions;
 
     @Column(name = "created_at", nullable = false)
@@ -48,6 +52,4 @@ public class Role {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
     }
-
-    
 }
