@@ -2,6 +2,8 @@ package com.wealthtech.crm.modules.usermanager.entity;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -18,6 +20,7 @@ public class User {
     private Long id;
 
     @Column(name = "password", nullable = false)
+    @JsonIgnore
     private String password;
 
     @Column(name = "email", nullable = false, unique = true)
@@ -39,6 +42,7 @@ public class User {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reports_to_id")
+    @JsonIgnore
     private User reportsTo;
 
     @Column(name = "created_at", nullable = false)

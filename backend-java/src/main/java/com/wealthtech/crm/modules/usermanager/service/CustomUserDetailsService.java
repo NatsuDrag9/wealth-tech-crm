@@ -36,9 +36,12 @@ public class CustomUserDetailsService implements UserDetailsService {
             }
         }
 
+        // TODO: Password field removed from User entity pending default-password email flow.
+        // Using a placeholder here so Spring Security's UserDetails contract compiles;
+        // actual authentication will be replaced by the new user-setup flow.
         return new org.springframework.security.core.userdetails.User(
             user.getEmail(),
-            user.getPassword(),
+            "{noop}",
             authorities
         );
         
