@@ -39,7 +39,7 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable()) // Not required since using token-based authentication and not cookie-based authentication
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/auth/**", "/api/users/forgot-password/**")
+            .requestMatchers("/api/auth/**", "/api/users/forgot-password/**", "/api/v1/auth/**")
             .permitAll() // Public login/auth endpoints
             .anyRequest()
             .authenticated() // Protected endpoints

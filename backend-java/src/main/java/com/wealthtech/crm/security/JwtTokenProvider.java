@@ -17,13 +17,13 @@ import java.util.Date;
 @Slf4j
 public class JwtTokenProvider {
 
-    @Value("${app.jwt-secret:9a2f8c4e7b1a6d3e8f5c2b9a7e4d1f8c3b6a9e2f5c8d1b4e7a0f3c6d9b2e5a8f}")
+    @Value("${jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971}")
     private String jwtSecret;
 
-    @Value("${app.jwt.expiration-ms:900000}") // 15 minutes default for access token
+    @Value("${jwt.access-token-expiration-ms:900000}") // 15 minutes default for access token
     private long expirationInMs;
 
-    @Value("${app.jwt.refresh-expiration-ms:604800000}") // 7 days default for refresh token
+    @Value("${jwt.refresh-token-expiration-ms:604800000}") // 7 days default for refresh token
     private long refreshExpirationInMs;
 
     private SecretKey getSigningKey() {
