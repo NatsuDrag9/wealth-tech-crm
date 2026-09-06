@@ -29,6 +29,15 @@ public class Group {
     @Column(name = "created_at", updatable =  false)
     private LocalDateTime createdAt;
 
+    @Column(name = "created_by", nullable = false)
+    private Long createdBy;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(name = "updated_by")
+    private Long updatedBy;
+
     @OneToMany(mappedBy="group")
     @JsonIgnore
     private Set<Role> roles;
@@ -40,5 +49,10 @@ public class Group {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }
