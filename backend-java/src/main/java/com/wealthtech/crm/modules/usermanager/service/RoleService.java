@@ -11,6 +11,7 @@ import com.wealthtech.crm.modules.usermanager.repository.GroupRepository;
 import com.wealthtech.crm.modules.usermanager.repository.PermissionRepository;
 import com.wealthtech.crm.modules.usermanager.repository.RoleRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -133,12 +134,12 @@ public class RoleService {
                 role.getId(),
                 role.getName(),
                 role.getDescription(),
-                userDisplayService.resolve(role.getGroup() != null ? role.getGroup().getId() : null),
+                userDisplayService.toDropdownOption(role.getGroup()),
                 permissions,
                 role.getCreatedAt(),
-                userDisplayService.resolve(role.getCreatedBy()),
+                userDisplayService.resolveUser(role.getCreatedBy()),
                 role.getUpdatedAt(),
-                userDisplayService.resolve(role.getUpdatedBy())
+                userDisplayService.resolveUser(role.getUpdatedBy())
         );
     }
 }

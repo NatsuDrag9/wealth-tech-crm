@@ -1,5 +1,6 @@
 package com.wealthtech.crm.modules.usermanager.controller;
 
+import com.wealthtech.crm.common.dto.DropdownOption;
 import com.wealthtech.crm.modules.usermanager.dto.*;
 import com.wealthtech.crm.modules.usermanager.entity.User;
 import com.wealthtech.crm.modules.usermanager.exception.NotFoundException;

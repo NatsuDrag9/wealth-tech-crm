@@ -11,6 +11,7 @@ import com.wealthtech.crm.modules.usermanager.repository.GroupRepository;
 import com.wealthtech.crm.modules.usermanager.repository.RoleRepository;
 import com.wealthtech.crm.modules.usermanager.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -74,13 +75,13 @@ public class UserService {
     }
 
     public UserResponse getUser(Long id) {
-        User user = userRepository.findById(id)
+        User user = userRepository.findByIdWithRelations(id)
                 .orElseThrow(() -> new NotFoundException("User not found"));
         return mapToResponse(user);
     }
 
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
-        User user = userRepository.findById(id)
+        User user = userRepository.findByIdWithRelations(id)
                 .orElseThrow(() -> new NotFoundException("User not found"));
 
         if (request.email() != null && !request.email().isBlank()) {
@@ -164,7 +165,7 @@ public class UserService {
     }
 
     public AuthenticatedUserResponse getAuthenticatedUser(Long userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdWithRelations(userId)
                 .orElseThrow(() -> new NotFoundException("User not found"));
 
         Set<String> permissions = (user.getRole() != null && user.getRole().getPermissions() != null)
@@ -179,8 +180,8 @@ public class UserService {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getFirstName() + " " + user.getLastName(),
-                userDisplayService.resolve(user.getRole() != null ? user.getRole().getId() : null),
-                userDisplayService.resolve(user.getGroup() != null ? user.getGroup().getId() : null),
+                userDisplayService.toDropdownOption(user.getRole()),
+                userDisplayService.toDropdownOption(user.getGroup()),
                 null,
                 permissions
         );
@@ -193,9 +194,9 @@ public class UserService {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getFirstName() + " " + user.getLastName(),
-                userDisplayService.resolve(user.getRole() != null ? user.getRole().getId() : null),
-                userDisplayService.resolve(user.getGroup() != null ? user.getGroup().getId() : null),
-                userDisplayService.resolve(user.getReportsTo() != null ? user.getReportsTo().getId() : null),
+                userDisplayService.toDropdownOption(user.getRole()),
+                userDisplayService.toDropdownOption(user.getGroup()),
+                userDisplayService.toDropdownOption(user.getReportsTo()),
                 user.getCreatedAt(),
                 user.getCreatedBy(),
                 user.getLanguages()

@@ -41,7 +41,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         // actual authentication will be replaced by the new user-setup flow.
         return new org.springframework.security.core.userdetails.User(
             user.getEmail(),
-            "{noop}",
+            user.getPassword(),
             authorities
         );
         

@@ -4,13 +4,12 @@ import com.wealthtech.crm.common.dto.DropdownOption;
 import com.wealthtech.crm.modules.usermanager.dto.*;
 import com.wealthtech.crm.modules.usermanager.entity.Group;
 import com.wealthtech.crm.modules.usermanager.entity.Role;
-import com.wealthtech.crm.modules.usermanager.entity.User;
 import com.wealthtech.crm.modules.usermanager.exception.ConflictException;
 import com.wealthtech.crm.modules.usermanager.exception.NotFoundException;
 import com.wealthtech.crm.modules.usermanager.repository.GroupRepository;
 import com.wealthtech.crm.modules.usermanager.repository.RoleRepository;
-import com.wealthtech.crm.modules.usermanager.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,10 +19,12 @@ import java.util.stream.Collectors;
 @Service
 public class GroupService {
     private final GroupRepository groupRepository;
+    private final RoleRepository roleRepository;
     private final UserDisplayService userDisplayService;
 
-    public GroupService(GroupRepository groupRepository, UserDisplayService userDisplayService) {
+    public GroupService(GroupRepository groupRepository, RoleRepository roleRepository, UserDisplayService userDisplayService) {
         this.groupRepository = groupRepository;
+        this.roleRepository = roleRepository;
         this.userDisplayService = userDisplayService;
     }
 
@@ -114,9 +115,9 @@ public class GroupService {
                 group.getName(),
                 group.getDescription(),
                 group.getCreatedAt(),
-                userDisplayService.resolve(group.getCreatedBy()),
+                userDisplayService.resolveUser(group.getCreatedBy()),
                 group.getUpdatedAt(),
-                userDisplayService.resolve(group.getUpdatedBy())
+                userDisplayService.resolveUser(group.getUpdatedBy())
         );
     }
 
@@ -129,12 +130,12 @@ public class GroupService {
                 role.getId(),
                 role.getName(),
                 role.getDescription(),
-                userDisplayService.resolve(role.getGroup() != null ? role.getGroup().getId() : null),
+                userDisplayService.toDropdownOption(role.getGroup()),
                 permissions,
                 role.getCreatedAt(),
-                userDisplayService.resolve(role.getCreatedBy()),
+                userDisplayService.resolveUser(role.getCreatedBy()),
                 role.getUpdatedAt(),
-                userDisplayService.resolve(role.getUpdatedBy())
+                userDisplayService.resolveUser(role.getUpdatedBy())
         );
     }
 }
