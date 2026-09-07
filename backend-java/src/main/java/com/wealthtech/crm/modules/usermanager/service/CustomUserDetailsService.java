@@ -27,18 +27,16 @@ public class CustomUserDetailsService implements UserDetailsService {
         Set<GrantedAuthority> authorities = new HashSet<>();
         
         if(user.getRole() != null) {
-            // Add role
+            // Add role (with standard Spring "ROLE_" prefix)
             authorities.add(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName()));
 
-            // Add permissions
+            // Add permissions directly as GrantedAuthority instances
             if(user.getRole().getPermissions() != null) {
-                user.getRole().getPermissions().forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission.getCodename())));
+                authorities.addAll(user.getRole().getPermissions());
             }
         }
 
-        // TODO: Password field removed from User entity pending default-password email flow.
-        // Using a placeholder here so Spring Security's UserDetails contract compiles;
-        // actual authentication will be replaced by the new user-setup flow.
+       
         return new org.springframework.security.core.userdetails.User(
             user.getEmail(),
             user.getPassword(),

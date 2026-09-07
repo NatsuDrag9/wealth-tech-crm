@@ -9,6 +9,7 @@ import com.wealthtech.crm.modules.usermanager.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,7 @@ public class UserController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('user:create')")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request, Authentication authentication) {
         Long currentUserId = resolveCurrentUserId(authentication);
         UserResponse response = userService.createUser(request, currentUserId);
@@ -33,18 +35,21 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('user:read')")
     public ResponseEntity<UserResponse> getUser(@PathVariable Long id) {
         UserResponse response = userService.getUser(id);
         return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasAuthority('user:update')")
     public ResponseEntity<UserResponse> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         UserResponse response = userService.updateUser(id, request);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('user:read')")
     public ResponseEntity<CursorPaginatedResponse<UserResponse>> getUsers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long cursor,
@@ -55,6 +60,7 @@ public class UserController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AuthenticatedUserResponse> getAuthenticatedUser(Authentication authentication) {
         String email = authentication.getName();
         User user = userRepository.findByEmail(email)
@@ -64,6 +70,7 @@ public class UserController {
     }
 
     @GetMapping("/dropdown")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DropdownOption<Long>>> getUserDropdown(
             @RequestParam(required = false) Long groupId,
             @RequestParam(required = false) Long excludeUserId

@@ -170,7 +170,7 @@ public class UserService {
 
         Set<String> permissions = (user.getRole() != null && user.getRole().getPermissions() != null)
                 ? user.getRole().getPermissions().stream()
-                        .map(p -> p.getCodename())
+                        .map(p -> p.getName())
                         .collect(Collectors.toSet())
                 : Set.of();
 

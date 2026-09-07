@@ -60,7 +60,7 @@ public class AuthService {
 
         Set<String> permissions = (user.getRole() != null && user.getRole().getPermissions() != null)
                 ? user.getRole().getPermissions().stream()
-                    .map(Permission::getCodename)
+                    .map(Permission::getName)
                     .collect(Collectors.toSet())
                 : Set.of();
 
@@ -89,7 +89,7 @@ public class AuthService {
 
         Set<String> permissions = (user.getRole() != null && user.getRole().getPermissions() != null)
                 ? user.getRole().getPermissions().stream()
-                    .map(Permission::getCodename)
+                    .map(Permission::getName)
                     .collect(Collectors.toSet())
                 : Set.of();
 

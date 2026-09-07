@@ -10,7 +10,7 @@ import java.util.Optional;
 
 @Repository
 public interface PermissionRepository extends JpaRepository<Permission, Long> {
-    Optional<Permission> findByCodename(String codename);
+    Optional<Permission> findByName(String codename);
 
     List<Permission> findAllByOrderByIdAsc();
 }

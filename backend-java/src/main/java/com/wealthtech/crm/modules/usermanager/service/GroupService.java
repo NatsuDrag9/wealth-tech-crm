@@ -123,7 +123,7 @@ public class GroupService {
 
     private RoleResponse mapRoleToResponse(Role role) {
         Set<String> permissions = (role.getPermissions() != null)
-                ? role.getPermissions().stream().map(p -> p.getCodename()).collect(Collectors.toSet())
+                ? role.getPermissions().stream().map(p -> p.getName()).collect(Collectors.toSet())
                 : Set.of();
 
         return new RoleResponse(

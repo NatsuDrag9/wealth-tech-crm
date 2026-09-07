@@ -1,5 +1,5 @@
 package com.wealthtech.crm.modules.usermanager.entity;
-
+import org.springframework.security.core.GrantedAuthority; 
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -13,22 +13,29 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Permission {
+public class Permission implements GrantedAuthority {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
-    private String codename;
-    
+    // The human-readable lable for UI display e.g. "View Client"
+    @Column(name = "display_name", nullable = false)
+    private String displayName;
 
-    @Column(name = "permission_name", nullable = false)
+    // The unique authority identifier, e.g. "client:read"
+    @Column(nullable = false, unique = true)
     private String name;
 
-    @Column(name = "content_type")
-    private String contentType;
+    @Column(nullable = false)
+    private String resource;
 
     @ManyToMany(mappedBy = "permissions")
     @JsonIgnore
     private Set<Role> roles;
+
+    // Contract from GrantedAuthority interface to directly treat this entity as an authority without manual conversions
+    @Override
+    public String getAuthority() {
+        return this.name;
+    }
 }

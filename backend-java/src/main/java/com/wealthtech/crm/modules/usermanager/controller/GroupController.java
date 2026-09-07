@@ -9,6 +9,7 @@ import com.wealthtech.crm.modules.usermanager.service.GroupService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,7 @@ public class GroupController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('crmgroup:create')")
     public ResponseEntity<GroupResponse> createGroup(@Valid @RequestBody CreateGroupRequest request, Authentication authentication) {
         Long currentUserId = resolveCurrentUserId(authentication);
         GroupResponse response = groupService.createGroup(request, currentUserId);
@@ -33,18 +35,21 @@ public class GroupController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('crmgroup:read')")
     public ResponseEntity<GroupResponse> getGroup(@PathVariable Long id) {
         GroupResponse response = groupService.getGroup(id);
         return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasAuthority('crmgroup:update')")
     public ResponseEntity<GroupResponse> updateGroup(@PathVariable Long id, @Valid @RequestBody UpdateGroupRequest request) {
         GroupResponse response = groupService.updateGroup(id, request);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('crmgroup:read')")
     public ResponseEntity<CursorPaginatedResponse<GroupResponse>> getGroups(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long cursor,
@@ -55,12 +60,14 @@ public class GroupController {
     }
 
     @GetMapping("/dropdown")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DropdownOption<Long>>> getGroupDropdown() {
         List<DropdownOption<Long>> response = groupService.getGroupDropdown();
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{id}/roles")
+    @PreAuthorize("hasAnyAuthority('role:read', 'crmgroup:read')")
     public ResponseEntity<List<RoleResponse>> getGroupRoles(@PathVariable Long id) {
         List<RoleResponse> response = groupService.getGroupRoles(id);
         return ResponseEntity.ok(response);

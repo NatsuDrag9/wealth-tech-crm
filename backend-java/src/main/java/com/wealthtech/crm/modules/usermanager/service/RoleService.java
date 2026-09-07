@@ -127,7 +127,7 @@ public class RoleService {
 
     private RoleResponse mapToResponse(Role role) {
         Set<String> permissions = (role.getPermissions() != null)
-                ? role.getPermissions().stream().map(Permission::getCodename).collect(Collectors.toSet())
+                ? role.getPermissions().stream().map(Permission::getName).collect(Collectors.toSet())
                 : Set.of();
 
         return new RoleResponse(

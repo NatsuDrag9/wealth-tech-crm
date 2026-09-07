@@ -21,54 +21,71 @@ public class PermissionSeeder implements CommandLineRunner {
             return;
         }
 
-        seedPermission("view_client", "View Client", "client");
-        seedPermission("view_clientprofile", "View Client Profile", "clientprofile");
-        seedPermission("view_riskappetite", "View Risk Appetite", "riskappetite");
-        seedPermission("view_portfolioreview", "View Portfolio Review", "portfolioreview");
-        seedPermission("view_portfolioentry", "View Portfolio Entry", "portfolioentry");
-        seedPermission("view_task", "View Task", "task");
-        seedPermission("view_note", "View Note", "note");
-        seedPermission("view_userprofile", "View User Profile", "userprofile");
-        seedPermission("view_user", "View User", "user");
-        seedPermission("view_crmgroup", "View CRM Group", "crmgroup");
-        seedPermission("view_role", "View Role", "role");
-        seedPermission("view_rolepermission", "View Role Permission", "rolepermission");
-        seedPermission("add_client", "Add Client", "client");
-        seedPermission("change_client", "Change Client", "client");
-        seedPermission("delete_client", "Delete Client", "client");
-        seedPermission("add_clientprofile", "Add Client Profile", "clientprofile");
-        seedPermission("change_clientprofile", "Change Client Profile", "clientprofile");
-        seedPermission("delete_clientprofile", "Delete Client Profile", "clientprofile");
-        seedPermission("add_riskappetite", "Add Risk Appetite", "riskappetite");
-        seedPermission("change_riskappetite", "Change Risk Appetite", "riskappetite");
-        seedPermission("delete_riskappetite", "Delete Risk Appetite", "riskappetite");
-        seedPermission("add_portfolioreview", "Add Portfolio Review", "portfolioreview");
-        seedPermission("change_portfolioreview", "Change Portfolio Review", "portfolioreview");
-        seedPermission("delete_portfolioreview", "Delete Portfolio Review", "portfolioreview");
-        seedPermission("add_portfolioentry", "Add Portfolio Entry", "portfolioentry");
-        seedPermission("change_portfolioentry", "Change Portfolio Entry", "portfolioentry");
-        seedPermission("delete_portfolioentry", "Delete Portfolio Entry", "portfolioentry");
-        seedPermission("add_task", "Add Task", "task");
-        seedPermission("change_task", "Change Task", "task");
-        seedPermission("delete_task", "Delete Task", "task");
-        seedPermission("add_note", "Add Note", "note");
-        seedPermission("change_note", "Change Note", "note");
-        seedPermission("delete_note", "Delete Note", "note");
-        seedPermission("add_crmgroup", "Add CRM Group", "crmgroup");
-        seedPermission("change_crmgroup", "Change CRM Group", "crmgroup");
-        seedPermission("delete_crmgroup", "Delete CRM Group", "crmgroup");
-        seedPermission("add_role", "Add Role", "role");
-        seedPermission("change_role", "Change Role", "role");
-        seedPermission("delete_role", "Delete Role", "role");
-        seedPermission("add_rolepermission", "Add Role Permission", "rolepermission");
-        seedPermission("change_rolepermission", "Change Role Permission", "rolepermission");
-        seedPermission("delete_rolepermission", "Delete Role Permission", "rolepermission");
-        seedPermission("add_user", "Add User", "user");
-        seedPermission("change_user", "Change User", "user");
-        seedPermission("delete_user", "Delete User", "user");
+        // Clients
+        seedPermission("client:read", "View Client", "client");
+        seedPermission("client:create", "Create Client", "client");
+        seedPermission("client:update", "Update Client", "client");
+        seedPermission("client:delete", "Delete Client", "client");
+
+        // Client Profiles
+        seedPermission("clientprofile:read", "View Client Profile", "clientprofile");
+        seedPermission("clientprofile:create", "Create Client Profile", "clientprofile");
+        seedPermission("clientprofile:update", "Update Client Profile", "clientprofile");
+        seedPermission("clientprofile:delete", "Delete Client Profile", "clientprofile");
+
+        // Risk Appetite
+        seedPermission("riskappetite:read", "View Risk Appetite", "riskappetite");
+        seedPermission("riskappetite:create", "Create Risk Appetite", "riskappetite");
+        seedPermission("riskappetite:update", "Update Risk Appetite", "riskappetite");
+        seedPermission("riskappetite:delete", "Delete Risk Appetite", "riskappetite");
+
+        // Portfolio Review & Entry
+        seedPermission("portfolioreview:read", "View Portfolio Review", "portfolioreview");
+        seedPermission("portfolioreview:create", "Create Portfolio Review", "portfolioreview");
+        seedPermission("portfolioreview:update", "Update Portfolio Review", "portfolioreview");
+        seedPermission("portfolioreview:delete", "Delete Portfolio Review", "portfolioreview");
+
+        seedPermission("portfolioentry:read", "View Portfolio Entry", "portfolioentry");
+        seedPermission("portfolioentry:create", "Create Portfolio Entry", "portfolioentry");
+        seedPermission("portfolioentry:update", "Update Portfolio Entry", "portfolioentry");
+        seedPermission("portfolioentry:delete", "Delete Portfolio Entry", "portfolioentry");
+
+        // Tasks & Notes
+        seedPermission("task:read", "View Task", "task");
+        seedPermission("task:create", "Create Task", "task");
+        seedPermission("task:update", "Update Task", "task");
+        seedPermission("task:delete", "Delete Task", "task");
+
+        seedPermission("note:read", "View Note", "note");
+        seedPermission("note:create", "Create Note", "note");
+        seedPermission("note:update", "Update Note", "note");
+        seedPermission("note:delete", "Delete Note", "note");
+
+        // User Management: Users, Groups, Roles
+        seedPermission("user:read", "View User", "user");
+        seedPermission("user:create", "Create User", "user");
+        seedPermission("user:update", "Update User", "user");
+        seedPermission("user:delete", "Delete User", "user");
+
+        seedPermission("userprofile:read", "View User Profile", "userprofile");
+
+        seedPermission("crmgroup:read", "View CRM Group", "crmgroup");
+        seedPermission("crmgroup:create", "Create CRM Group", "crmgroup");
+        seedPermission("crmgroup:update", "Update CRM Group", "crmgroup");
+        seedPermission("crmgroup:delete", "Delete CRM Group", "crmgroup");
+
+        seedPermission("role:read", "View Role", "role");
+        seedPermission("role:create", "Create Role", "role");
+        seedPermission("role:update", "Update Role", "role");
+        seedPermission("role:delete", "Delete Role", "role");
+
+        seedPermission("rolepermission:read", "View Role Permission", "rolepermission");
+        seedPermission("rolepermission:create", "Create Role Permission", "rolepermission");
+        seedPermission("rolepermission:update", "Update Role Permission", "rolepermission");
+        seedPermission("rolepermission:delete", "Delete Role Permission", "rolepermission");
     }
 
-    private void seedPermission(String codename, String name, String contentType) {
-        permissionService.getOrCreate(codename, name, contentType);
+    private void seedPermission(String name, String displayName, String resource) {
+        permissionService.getOrCreate(name, displayName, resource);
     }
 }

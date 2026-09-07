@@ -9,6 +9,7 @@ import com.wealthtech.crm.modules.usermanager.service.RoleService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,7 @@ public class RoleController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('role:create')")
     public ResponseEntity<RoleResponse> createRole(@Valid @RequestBody CreateRoleRequest request, Authentication authentication) {
         Long currentUserId = resolveCurrentUserId(authentication);
         RoleResponse response = roleService.createRole(request, currentUserId);
@@ -33,18 +35,21 @@ public class RoleController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('role:read')")
     public ResponseEntity<RoleResponse> getRole(@PathVariable Long id) {
         RoleResponse response = roleService.getRole(id);
         return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasAuthority('role:update')")
     public ResponseEntity<RoleResponse> updateRole(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
         RoleResponse response = roleService.updateRole(id, request);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('role:read')")
     public ResponseEntity<CursorPaginatedResponse<RoleResponse>> getRoles(
             @RequestParam(required = false) Long groupId,
             @RequestParam(required = false) String search,
@@ -56,12 +61,14 @@ public class RoleController {
     }
 
     @GetMapping("/dropdown")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DropdownOption<Long>>> getRoleDropdown(@RequestParam(required = false) Long groupId) {
         List<DropdownOption<Long>> response = roleService.getRoleDropdown(groupId);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/set-permissions")
+    @PreAuthorize("hasAuthority('rolepermission:update') or hasAuthority('role:update')")
     public ResponseEntity<RoleResponse> setRolePermissions(@PathVariable Long id, @Valid @RequestBody SetPermissionsRequest request) {
         RoleResponse response = roleService.setPermissions(id, request);
         return ResponseEntity.ok(response);

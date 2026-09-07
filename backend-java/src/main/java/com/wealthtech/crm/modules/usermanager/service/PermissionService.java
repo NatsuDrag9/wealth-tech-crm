@@ -17,17 +17,17 @@ public class PermissionService {
 
     public List<PermissionResponse> getAllPermissions() {
         return permissionRepository.findAllByOrderByIdAsc().stream()
-                .map(p -> new PermissionResponse(p.getId(), p.getCodename(), p.getName(), p.getContentType()))
+                .map(p -> new PermissionResponse(p.getId(), p.getName(), p.getDisplayName(), p.getResource()))
                 .toList();
     }
 
-    public Permission getOrCreate(String codename, String name, String contentType) {
-        return permissionRepository.findByCodename(codename)
+    public Permission getOrCreate(String name, String displayName, String resource) {
+        return permissionRepository.findByName(name)
                 .orElseGet(() -> {
                     Permission permission = new Permission();
-                    permission.setCodename(codename);
                     permission.setName(name);
-                    permission.setContentType(contentType);
+                    permission.setDisplayName(displayName);
+                    permission.setResource(resource);
                     return permissionRepository.save(permission);
                 });
     }
