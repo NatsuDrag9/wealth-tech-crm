@@ -31,4 +31,16 @@ public enum ScoreCategory {
 
         return score < 14 ? VERY_CONSERVATIVE : VERY_AGGRESSIVE;
     }
+
+    public static ScoreCategory fromCode(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        for (ScoreCategory category : values()) {
+            if (category.code.equalsIgnoreCase(code) || category.name().equalsIgnoreCase(code)) {
+                return category;
+            }
+        }
+        throw new IllegalArgumentException("Unknown score category: " + code);
+    }
 }
