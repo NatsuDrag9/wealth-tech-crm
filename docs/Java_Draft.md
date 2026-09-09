@@ -79,7 +79,81 @@
   - Roles and groups are shared references. One role may be assigned to many users; one group may contain many roles and users.
   - Using `CascadeType.REMOVE` on `Group → Role` or `Role → User` would silently delete dependent records, potentially breaking authorization for active users.
   - Even without JPA cascade, a raw `DELETE FROM groups WHERE id = ?` would leave foreign keys dangling unless the DB enforces `ON DELETE RESTRICT`.
-- **What would be required if delete is ever added:**
+- What would be required if delete is ever added:
   - Soft-delete or explicit reassignment before hard delete.
   - Service-layer guards: `409 Conflict` if a group still has roles/users, or if a role still has users.
   - No JPA `CascadeType.REMOVE` on any RBAC relationship.
+
+---
+
+#### Portfolio Review & Recommendation
+
+##### 1. Domain Entities & Database Schema
+```mermaid
+erDiagram
+    portfolio_reviews ||--|{ portfolio_entries : "has many holdings"
+    portfolio_reviews ||--o| portfolio_recommendations : "optional link (only for REPLACE_FUNDS)"
+    portfolio_recommendations ||--|{ recommendation_fund_items : "has many fund line-items"
+    eligible_funds ||--|{ recommendation_fund_items : "referenced fund"
+    portfolio_entries ||--o| recommendation_fund_items : "optional replacement target"
+
+    portfolio_reviews {
+        bigint id PK
+        bigint client_id
+        varchar status
+        numeric total_invested
+    }
+
+    portfolio_entries {
+        bigint id PK
+        bigint portfolio_review_id FK "References portfolio_reviews.id"
+        varchar fund_name
+        varchar action "HOLD or SELL"
+    }
+
+    eligible_funds {
+        bigint id PK
+        varchar fund_name
+        varchar isin
+        varchar score_category "MODERATE, AGGRESSIVE, etc."
+    }
+
+    portfolio_recommendations {
+        bigint id PK
+        bigint client_id
+        bigint portfolio_review_id FK "Nullable! References portfolio_reviews.id"
+        varchar flow_type "REPLACE_FUNDS or NEW_PORTFOLIO"
+    }
+
+    recommendation_fund_items {
+        bigint id PK
+        bigint recommendation_id FK "References portfolio_recommendations.id"
+        bigint eligible_fund_id FK "References eligible_funds.id"
+        bigint replaces_entry_id FK "Nullable! References portfolio_entries.id"
+        numeric amount "e.g. 50000"
+    }
+```
+
+##### 2. DTO & API Lifecycle Workflow
+```mermaid
+flowchart TD
+    subgraph Review Flow
+        A["eCAS Upload"] --> B["GET /portfolio-reviews/{id}"]
+        B --> C["PortfolioReviewResponse (Header & Totals)"]
+        C --> D["List of PortfolioEntryResponse (HOLD / SELL Holdings)"]
+    end
+
+    subgraph Recommendation Selection
+        E["GET /eligible-funds?category={code}"] --> F["List of EligibleFundResponse (Dropdown Items)"]
+    end
+
+    subgraph Proposal Submission
+        D -. "RM chooses replacements for SELL" .-> G["POST /portfolio-recommendations"]
+        F -. "RM picks funds & amounts" .-> G
+        G --> H["CreateRecommendationRequest"]
+        H --> I["List of RfItemRequest"]
+        I --> J["Saved in Database"]
+        J --> K["Returns PortfolioRecommendationResponse"]
+        K --> L["List of RfItemResponse"]
+    end
+```
