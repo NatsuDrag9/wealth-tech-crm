@@ -157,3 +157,27 @@ flowchart TD
         K --> L["List of RfItemResponse"]
     end
 ```
+
+##### 3. Recommendation Status & Async PDF Generation State Machine
+```mermaid
+stateDiagram-v2
+    [*] --> SAVED : "POST /portfolio-recommendations (Proposal created, document URL is null)"
+
+    SAVED --> SAVED : "POST /portfolio-recommendations/{id}/generate-pdf (HTTP 202 Accepted)"
+    note right of SAVED
+        Frontend polls GET /portfolio-recommendations/{id}
+        every 2.5s with active loading spinner
+    end note
+
+    SAVED --> PDF_GENERATED : "OpenPDF worker completes & saves file to disk"
+    SAVED --> PDF_FAILED : "Worker encounters exception (caught in try/catch)"
+
+    PDF_FAILED --> SAVED : "RM clicks Retry (POST /portfolio-recommendations/{id}/generate-pdf)"
+
+    PDF_GENERATED --> [*] : "Frontend polling terminates; Download PDF CTA enabled"
+```
+
+- **`SAVED`**: Initial state upon proposal creation (`POST /portfolio-recommendations`). `generated_document_url` is `null`. When `POST /portfolio-recommendations/{id}/generate-pdf` is called, the endpoint immediately returns `202 Accepted` and delegates execution to `@Async generatePdfAsync()`. The frontend UI runs a 2.5s polling loop on `GET /portfolio-recommendations/{id}`.
+- **`PDF_GENERATED`**: The asynchronous OpenPDF worker finishes rendering tables, sums, and SEBI disclaimers to `uploads/recommendations/recommendation_{id}.pdf`, sets `generated_document_url`, and commits `PDF_GENERATED`. Frontend polling terminates upon seeing this state and reveals the download link.
+- **`PDF_FAILED`**: If rendering or disk I/O throws an error, the async worker catches the exception and marks the status as `PDF_FAILED`. The frontend halts polling and renders a retry button allowing the RM to re-trigger generation.
+
