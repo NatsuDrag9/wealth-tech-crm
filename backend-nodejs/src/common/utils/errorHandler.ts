@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import mongoose, { mongo } from 'mongoose';
 import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 import { AppError } from './AppError';
+import { logger } from './logger';
 
 export const errorHandler = (
   err: unknown,
@@ -44,6 +45,30 @@ export const errorHandler = (
   // 6. Generic JavaScript standard error fallback
   else if (err instanceof Error) {
     message = err.message;
+  }
+
+  // Structured Logging based on error severity
+  if (statusCode >= 500) {
+    logger.error(
+      {
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+        err: err instanceof Error ? { message: err.message, stack: err.stack } : err,
+      },
+      'Unhandled internal server error'
+    );
+  } else {
+    logger.warn(
+      {
+        statusCode,
+        message,
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+      },
+      'Client operational error'
+    );
   }
 
   res.status(statusCode).json({
