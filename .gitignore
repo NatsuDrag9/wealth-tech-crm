@@ -25,3 +25,9 @@ replay_pid*
 
 # To Do: Remove this later
 /docs/Project_Summary.md
+
+# Node.js
+node_modules/
+dist/
+.env
+uploads/
