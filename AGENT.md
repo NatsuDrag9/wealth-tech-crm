@@ -15,3 +15,4 @@
 ## Code Review Protocol
 - Whenever asked to review a file or a block of code, you must compile the project and run the unit tests first.
 - Include the test outcomes, errors, or logs as part of your evaluation in the code review feedback.
+- Add a backend related scope. For example, `fix(jb-<scope>)` , `feat(jb-<scope>)` for java backend and `fix(nb-<scope>)`, `feat(nb-<scope>)` for nodejs backend
