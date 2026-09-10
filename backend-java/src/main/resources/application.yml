@@ -26,6 +26,14 @@ spring:
 jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971 # 256-bit Secret Key
   access-token-expiration-ms: 900000     # 15 Minutes (15 * 60 * 1000)
-  refresh-token-expiration-ms: 604800000 # 7 Days (7 * 24 * 60 * 60 * 1000)
+# SpringDoc OpenAPI / Swagger UI Configuration
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
 
 # spring.application.name=crm-backend

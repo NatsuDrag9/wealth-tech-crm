@@ -39,8 +39,16 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable()) // Not required since using token-based authentication and not cookie-based authentication
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/auth/**", "/api/users/forgot-password/**", "/api/v1/auth/**")
-            .permitAll() // Public login/auth endpoints
+            .requestMatchers(
+                "/api/auth/**",
+                "/api/users/forgot-password/**",
+                "/api/v1/auth/**",
+                "/v3/api-docs/**",
+                "/v3/api-docs",
+                "/swagger-ui/**",
+                "/swagger-ui.html"
+            )
+            .permitAll() // Public login/auth and OpenAPI/Swagger endpoints
             .anyRequest()
             .authenticated() // Protected endpoints
         )
