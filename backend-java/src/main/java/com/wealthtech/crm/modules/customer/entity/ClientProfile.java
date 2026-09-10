@@ -60,7 +60,7 @@ public class ClientProfile {
         if (this.client != null && this.client.getStatus() != null) {
             this.clientStatus = this.client.getStatus();
         } else if (this.clientStatus == null) {
-            this.clientStatus = ClientStatus.LEAD;
+            this.clientStatus = ClientStatus.ONBOARDING;
         }
 
         if (this.kycStatus == null) {

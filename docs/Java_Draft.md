@@ -191,9 +191,8 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> LEAD : RM registers new client (POST /clients)
-    LEAD --> ONBOARDED : KYC verification completed
-    ONBOARDED --> ACTIVE : Capital invested / active advisory
+    [*] --> ONBOARDING : RM registers new client (POST /clients)
+    ONBOARDING --> ACTIVE : KYC verification completed
     ACTIVE --> INACTIVE : Client account paused / closed
     INACTIVE --> ACTIVE : Account reactivated
 ```
@@ -213,7 +212,7 @@ erDiagram
         varchar pan
         date date_of_birth
         varchar gender
-        varchar status "LEAD, ONBOARDED, ACTIVE, INACTIVE"
+        varchar status "ONBOARDING, ACTIVE, INACTIVE"
         bigint relationship_manager_id FK
         date sign_up_date
         timestamp created_at
@@ -226,7 +225,7 @@ erDiagram
         bigint id PK
         bigint client_id FK,UK "References clients.id"
         varchar kyc_status "PENDING, VERIFIED, REJECTED"
-        varchar client_status "LEAD, ONBOARDED, ACTIVE, INACTIVE"
+        varchar client_status "ONBOARDING, ACTIVE, INACTIVE"
         varchar address_line
         varchar city
         varchar state

@@ -78,7 +78,7 @@ public class Client {
             this.signUpDate = LocalDate.now();
         }
         if (this.status == null) {
-            this.status = ClientStatus.LEAD;
+            this.status = ClientStatus.ONBOARDING;
         }
     }
 
