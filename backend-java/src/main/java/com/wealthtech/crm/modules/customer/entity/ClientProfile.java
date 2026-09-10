@@ -2,6 +2,7 @@ package com.wealthtech.crm.modules.customer.entity;
 
 import java.time.LocalDateTime;
 
+import com.wealthtech.crm.modules.customer.enums.ClientStatus;
 import com.wealthtech.crm.modules.customer.enums.KycStatus;
 
 import jakarta.persistence.*;
@@ -27,6 +28,10 @@ public class ClientProfile {
     @Enumerated(EnumType.STRING)
     @Column(name = "kyc_status", nullable = false, length = 30)
     private KycStatus kycStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "client_status", nullable = false, length = 30)
+    private ClientStatus clientStatus;
 
     @Column(name = "address_line")
     private String addressLine;
@@ -67,6 +72,12 @@ public class ClientProfile {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        if (this.client != null && this.client.getStatus() != null) {
+            this.clientStatus = this.client.getStatus();
+        } else if (this.clientStatus == null) {
+            this.clientStatus = ClientStatus.LEAD;
+        }
+
         if (this.kycStatus == null) {
             this.kycStatus = KycStatus.PENDING;
         }
@@ -78,5 +89,8 @@ public class ClientProfile {
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+        if (this.client != null && this.client.getStatus() != null) {
+            this.clientStatus = this.client.getStatus();
+        }
     }
 }

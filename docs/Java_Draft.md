@@ -181,3 +181,65 @@ stateDiagram-v2
 - **`PDF_GENERATED`**: The asynchronous OpenPDF worker finishes rendering tables, sums, and SEBI disclaimers to `uploads/recommendations/recommendation_{id}.pdf`, sets `generated_document_url`, and commits `PDF_GENERATED`. Frontend polling terminates upon seeing this state and reveals the download link.
 - **`PDF_FAILED`**: If rendering or disk I/O throws an error, the async worker catches the exception and marks the status as `PDF_FAILED`. The frontend halts polling and renders a retry button allowing the RM to re-trigger generation.
 
+---
+
+#### Customer Management
+
+##### 1. Business Rule & Lifecycle Architecture
+> [!NOTE]
+> **Client / Investor Assumption**: The system operates under the foundational business rule that any customer added to the database is an active client / investor. The concept of a separate `PROSPECT` stage and `client_type` bifurcation has been intentionally eliminated; every customer entity represents an active client/investor with an assigned Relationship Manager and an associated KYC profile.
+
+```mermaid
+stateDiagram-v2
+    [*] --> LEAD : RM registers new client (POST /clients)
+    LEAD --> ONBOARDED : KYC verification completed
+    ONBOARDED --> ACTIVE : Capital invested / active advisory
+    ACTIVE --> INACTIVE : Client account paused / closed
+    INACTIVE --> ACTIVE : Account reactivated
+```
+
+##### 2. Domain Schema
+```mermaid
+erDiagram
+    users ||--o{ clients : "assigned relationship manager"
+    clients ||--|| client_profiles : "has one KYC profile"
+
+    clients {
+        bigint id PK
+        varchar first_name
+        varchar last_name
+        varchar email UK
+        varchar phone
+        varchar pan
+        date date_of_birth
+        varchar gender
+        varchar status "LEAD, ONBOARDED, ACTIVE, INACTIVE"
+        bigint relationship_manager_id FK
+        date sign_up_date
+        timestamp created_at
+        bigint created_by
+        timestamp updated_at
+        bigint updated_by
+    }
+
+    client_profiles {
+        bigint id PK
+        bigint client_id FK,UK "References clients.id"
+        varchar kyc_status "PENDING, VERIFIED, REJECTED"
+        varchar client_status "LEAD, ONBOARDED, ACTIVE, INACTIVE"
+        varchar address_line
+        varchar city
+        varchar state
+        varchar pincode
+        varchar country
+        varchar bank_name
+        varchar account_number
+        varchar ifsc_code
+        varchar nominee_name
+        varchar nominee_relationship
+        timestamp created_at
+        timestamp updated_at
+    }
+```
+
+

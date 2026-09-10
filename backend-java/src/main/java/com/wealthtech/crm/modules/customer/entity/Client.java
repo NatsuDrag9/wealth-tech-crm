@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.wealthtech.crm.modules.customer.enums.ClientStatus;
-import com.wealthtech.crm.modules.customer.enums.ClientType;
 import com.wealthtech.crm.modules.customer.enums.Gender;
 import com.wealthtech.crm.modules.usermanager.entity.User;
 
@@ -47,10 +46,6 @@ public class Client {
     private Gender gender;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "client_type", nullable = false, length = 30)
-    private ClientType clientType;
-
-    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private ClientStatus status;
 
@@ -82,9 +77,6 @@ public class Client {
         if (this.signUpDate == null) {
             this.signUpDate = LocalDate.now();
         }
-        if (this.clientType == null) {
-            this.clientType = ClientType.PROSPECT;
-        }
         if (this.status == null) {
             this.status = ClientStatus.LEAD;
         }
@@ -93,5 +85,23 @@ public class Client {
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+        if (this.profile != null) {
+            this.profile.setClientStatus(this.status);
+        }
+    }
+
+    public void setProfile(ClientProfile profile) {
+        this.profile = profile;
+        if (profile != null) {
+            profile.setClient(this);
+            profile.setClientStatus(this.status);
+        }
+    }
+
+    public void setStatus(ClientStatus status) {
+        this.status = status;
+        if (this.profile != null) {
+            this.profile.setClientStatus(status);
+        }
     }
 }
