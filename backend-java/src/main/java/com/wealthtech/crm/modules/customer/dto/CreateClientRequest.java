@@ -7,6 +7,7 @@ import com.wealthtech.crm.modules.customer.enums.Gender;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public record CreateClientRequest(
         @NotBlank(message = "First name is required")
@@ -30,14 +31,13 @@ public record CreateClientRequest(
         @JsonProperty("pan")
         String pan,
 
-        @NotBlank(message = "DOB is required")
+        @NotNull(message = "Date of birth is required")
         @JsonProperty("date_of_birth")
         LocalDate dateOfBirth,
 
         @JsonProperty("gender")
         Gender gender,
 
-        @NotBlank(message = "Relationshp manager is required")
         @JsonProperty("relationship_manager_id")
         Long relationshipManagerId,
 

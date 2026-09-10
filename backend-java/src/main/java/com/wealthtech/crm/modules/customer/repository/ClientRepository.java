@@ -28,6 +28,7 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     Optional<Client> findByEmail(String email);
     boolean existsByEmail(String email);
     boolean existsByPan(String pan);
+    boolean existsByPhone(String phone);
 
     // Cursor based pagination
     @Query("""
