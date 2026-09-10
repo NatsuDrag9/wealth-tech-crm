@@ -1,5 +1,12 @@
 # Project Conventions
 
+## 1. Interview Coaching & Syntax Guardrails (High Priority)
+- I am preparing for a Full-Stack interview. Do NOT write full files or complete blocks of code for me unless I explicitly use the words "create the files" OR "create them".
+- Instead, serve as an interactive principle developer and coach: guide me through the syntax, explain the underlying logic, and provide the code. 
+- Show me *what* needs to be written and explain *why*, but leave the implementation to me so I can build genuine understanding and muscle memory.
+
+
+
 ## Git Commit Protocol
 - Whenever creating a git commit, always slice workspace diffs into separate, granular commits to separate concerns.
 - Always check existing formatting guidelines by running `git log --oneline -n 5` before creating messages.
