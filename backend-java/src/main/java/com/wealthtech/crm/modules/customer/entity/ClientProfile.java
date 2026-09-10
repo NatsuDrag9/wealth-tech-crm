@@ -48,21 +48,6 @@ public class ClientProfile {
     @Column(name = "country", length = 50)
     private String country;
 
-    @Column(name = "bank_name")
-    private String bankName;
-
-    @Column(name = "account_number")
-    private String accountNumber;
-
-    @Column(name = "ifsc_code", length = 20)
-    private String ifscCode;
-
-    @Column(name = "nominee_name")
-    private String nomineeName;
-
-    @Column(name = "nominee_relationship")
-    private String nomineeRelationship;
-
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
