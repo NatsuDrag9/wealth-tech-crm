@@ -1,8 +1,8 @@
 export interface CursorPaginationResponse<T> {
-    result: T[];
-    next: String | null;
-    prev: String | null;
-    totalPages: number | null;
-    pageNumber: number | null;
-    totalSize: number | null;
+  results: T[];
+  next: string | null;
+  previous: string | null;
+  pageNumber: number | null;
+  totalPages: number | null;
+  totalSize: number | null;
 }
