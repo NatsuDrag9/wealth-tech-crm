@@ -231,14 +231,19 @@ erDiagram
         varchar state
         varchar pincode
         varchar country
-        varchar bank_name
-        varchar account_number
-        varchar ifsc_code
-        varchar nominee_name
-        varchar nominee_relationship
         timestamp created_at
         timestamp updated_at
     }
 ```
+
+---
+
+#### 3. Database Architecture & Design Highlights
+1. **1NF (Atomic Data)**: Every cell holds a single value—for example, addresses are split into separate `city`, `state`, and `pincode` columns instead of one long comma-separated string.
+2. **2NF & 3NF (Clean Relationships)**: Data is stored in only one place—for example, users link to a `role`, which links to a `department`, so renaming a department updates just one row instead of thousands of users.
+3. **Vertical Partitioning**: We split the client into two tables—frequently browsed info (name, email, status) lives in `clients`, while heavy KYC and address details live in `client_profiles` to keep client searches fast.
+4. **Intentional Denormalization**: We freeze the mutual fund price on recommendation proposals like a printed store receipt, so if fund prices change tomorrow, past client proposals stay permanently accurate for audits.
+5. **Smart Indexing**: Unique indexes block duplicate emails and PANs, while a composite index on `(status, rm_id, id)` lets the database jump straight to the next page of clients without scanning millions of rows.
+
 
 
