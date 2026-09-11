@@ -1,4 +1,28 @@
-# Node.js Architecture & Trade-offs
+# Node.js Backend
+
+## Architecture
+
+### Client
+
+In wealth management, the client lifecycle revolves around compliance (KYC) and relationship ownership (RM):
+
+```
+┌────────────────┐         KYC Verified           ┌──────────────┐
+│   ONBOARDING   │ ─────────────────────────────▶ │    ACTIVE    │
+└────────────────┘                                └──────────────┘
+        │                                                 │
+        │                   Manual Hold                   │
+        └───────────────────────────────────────────────▶ │   INACTIVE   │
+                                                          └──────────────┘
+```
+
+#### Key Business & System Design Rules in `clientService`:
+
+1. **The KYC Approval Trigger**: When compliance verifies a client (`verifyKyc(clientId, KycStatus.VERIFIED)`), the service automatically promotes the client from `ONBOARDING` to `ACTIVE`.
+2. **Automatic RM Fallback**: When a client is onboarded without explicitly choosing an RM, the service automatically assigns the currently logged-in employee (`currentUserId`) as the Relationship Manager.
+3. **Duplicate Prevention**: Before creating a client, check uniqueness on email, phone, and PAN (logging a warning before throwing `AppError(..., 409)`).
+4. **Two-Collection Mapping**: `mapToClientResponse` merges `Client` with `ClientProfile.kycStatus` and resolves `relationshipManager` into a `{ display_name, value }` `DropdownOption<string>`.
+5. **Background Batch Ingestion (`processBulkUploadAsync`)**: Processes parsed Excel rows in the background, quietly skipping duplicates (email/phone/PAN) and logging batch summary metrics without blocking the HTTP response.
 
 ## Decisions and Trade-Offs: 
 
@@ -16,4 +40,9 @@
 
 1. Extracted database queries and business rules into dedicated services, keeping controllers strictly as thin HTTP transport adapters.
 2. Decouples domain logic from Express `req`/`res`, enabling isolated unit testing and multi-transport reusability without HTTP mocking overhead.
+
+### Why Customer has a DTO layer while User Manager doesn't
+
+1. **User Manager**: User data lives in a single database table, and the API returns that record directly with passwords automatically hidden without needing separate DTOs.
+2. **Customer**: Customer data is split across two tables (`Client` and `ClientProfile`), so DTOs are used to merge them (e.g. `ClientResponseDto` pulls personal details from `Client` and `kyc_status` from `ClientProfile` into one response for the table view).
 
