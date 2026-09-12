@@ -74,3 +74,15 @@ HTTP JSON Response (res.status(statusCode).json(...))
 1. **User Manager**: User data lives in a single database table, and the API returns that record directly with passwords automatically hidden without needing separate DTOs.
 2. **Customer**: Customer data is split across two tables (`Client` and `ClientProfile`), so DTOs are used to merge them (e.g. `ClientResponseDto` pulls personal details from `Client` and `kyc_status` from `ClientProfile` into one response for the table view).
 
+## Libraries & Ecosystem Choices
+
+| Library | Version | Core Use Case in this Application |
+|---|---|---|
+| **`pdfkit`** | `^0.15.0` | **Client Proposal PDF Generation (`portfolioPdfService.ts`)**: Programmatically streams vector-drawn, branded A4 investment recommendation proposals directly to disk (`uploads/recommendations/`). Renders metadata callout boxes, multi-column fund allocation tables with Indian currency formatting (`INR`), and mandatory SEBI regulatory risk disclaimers without requiring headless browser overhead or heavy external binaries. |
+| **`exceljs`** | `^4.4.0` | **Bulk Client Onboarding & Template Generation (`clientExcelService.ts`)**: Generates pre-formatted, styled `.xlsx` download templates with locked headers, custom widths, and cell formats. Ingests and parses multi-row spreadsheets from memory buffers with strict zero-`any` type narrowing, safe Date parsing, and batch ingestion resilience. |
+| **`pino` & `pino-http`** | `^10.3.1` | **High-Throughput Structured JSON Logging (`logger.ts`)**: Fast, low-overhead logging engine enforcing the application-wide *logger-before-error* protocol. Enriches logs with HTTP request metadata (method, route, IP, user ID) and segregates operational warnings (`logger.warn`) from unhandled server exceptions (`logger.error`). |
+| **`multer`** | `^1.4.5-lts.1` | **In-Memory File Upload Streaming (`clientRoutes.ts`)**: Multipart/form-data middleware configured with `memoryStorage()` and a 10MB payload constraint. Feeds uploaded Excel sheets directly into memory buffers for processing without creating dangling temporary files on disk. |
+| **`jsonwebtoken` & `bcryptjs`** | `^9.0.2` / `^2.4.3` | **Authentication & Password Security (`jwt.ts`, `authController.ts`)**: Manages one-way salted hashing for employee passwords and signs minimalist "Slim" JWTs (containing only email) to enforce real-time, stateful database permission checks on every protected request. |
+| **`mongoose`** | `^8.3.4` | **Document Modeling & Subdocument Embedding**: Manages schema validation, compound indexing, and lifecycle timestamps. Leveraged for embedded document modeling (`PortfolioReview.entries`, `PortfolioRecommendation.funds`, `RiskAssessment.answers`) to enable atomic updates and eliminate SQL join overhead. Global `toJSON` hooks ensure automatic data sanitization (`_id` to `id`, password suppression). |
+
+
