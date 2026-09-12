@@ -1,0 +1,134 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: $neutral-50;
+
+  &__header {
+    height: $navbar-height;
+    background-color: #ffffff;
+    border-bottom: 1px solid $neutral-200;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 $spacing-6;
+    box-shadow: $shadow-sm;
+  }
+
+  &__brand {
+    font-size: $font-size-lg;
+    font-weight: 700;
+    color: $primary;
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__status-badge {
+    font-size: $font-size-xs;
+    padding: $spacing-1 $spacing-3;
+    border-radius: $border-radius-full;
+    background-color: $success-light;
+    color: $success;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: $spacing-1;
+  }
+
+  &__main {
+    flex: 1;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+    padding: $spacing-8 $spacing-6;
+  }
+
+  &__welcome-card {
+    @include card-surface;
+    padding: $spacing-6;
+    margin-bottom: $spacing-6;
+  }
+
+  &__title {
+    font-size: $font-size-2xl;
+    color: $neutral-900;
+    margin-bottom: $spacing-2;
+  }
+
+  &__description {
+    font-size: $font-size-base;
+    color: $neutral-600;
+    line-height: 1.6;
+  }
+
+  &__actions {
+    margin-top: $spacing-6;
+    display: flex;
+    gap: $spacing-4;
+  }
+
+  &__btn {
+    padding: $spacing-2 $spacing-4;
+    border-radius: $border-radius;
+    font-size: $font-size-sm;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+
+    &--primary {
+      background-color: $primary;
+      color: #ffffff;
+      border: 1px solid transparent;
+
+      &:hover {
+        background-color: $primary-hover;
+      }
+    }
+
+    &--secondary {
+      background-color: #ffffff;
+      color: $neutral-700;
+      border: 1px solid $neutral-300;
+
+      &:hover {
+        background-color: $neutral-100;
+      }
+    }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: $spacing-6;
+  }
+
+  &__card {
+    @include card-surface;
+    padding: $spacing-5;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: $shadow-md;
+    }
+  }
+
+  &__card-title {
+    font-size: $font-size-lg;
+    color: $neutral-800;
+    margin-bottom: $spacing-2;
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__card-text {
+    font-size: $font-size-sm;
+    color: $neutral-500;
+    line-height: 1.5;
+  }
+}
