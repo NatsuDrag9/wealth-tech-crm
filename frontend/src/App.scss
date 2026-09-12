@@ -41,7 +41,7 @@
 
   &__main {
     flex: 1;
-    max-width: 1100px;
+    max-width: 68.75rem;
     width: 100%;
     margin: 0 auto;
     padding: $spacing-8 $spacing-6;
@@ -102,7 +102,7 @@
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(18.75rem, 1fr));
     gap: $spacing-6;
   }
 
