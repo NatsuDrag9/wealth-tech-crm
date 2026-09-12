@@ -24,6 +24,34 @@ In wealth management, the client lifecycle revolves around compliance (KYC) and 
 4. **Two-Collection Mapping**: `mapToClientResponse` merges `Client` with `ClientProfile.kycStatus` and resolves `relationshipManager` into a `{ display_name, value }` `DropdownOption<string>`.
 5. **Background Batch Ingestion (`processBulkUploadAsync`)**: Processes parsed Excel rows in the background, quietly skipping duplicates (email/phone/PAN) and logging batch summary metrics without blocking the HTTP response.
 
+### Error Handling Pipeline
+
+```
+Service / Controller
+  │
+  ├─► throws new AppError("Client not found", 404)
+  │
+  ▼
+asyncHandler (Promise.resolve(...).catch(next))
+  │
+  ├─► routes error to Express error chain via next(err)
+  │
+  ▼
+errorHandler (Express 4-arg middleware)
+  │
+  ├─► Recognizes err instanceof AppError
+  ├─► Extracts err.statusCode (404) and err.message
+  ├─► Logs structured client warning: logger.warn(...)
+  │
+  ▼
+HTTP JSON Response (res.status(statusCode).json(...))
+```
+
+1. **Throw (`AppError`)**: When a business rule fails, the service throws an `AppError` carrying a clear message and HTTP status code (e.g., 404).
+2. **Catch (`asyncHandler`)**: Intercepts rejected promises from async controller methods and cleanly forwards them to Express via `next(err)`, avoiding unhandled crashes.
+3. **Handle (`errorHandler`)**: The global error middleware recognizes `AppError`, logs a structured warning, and extracts the status code and message.
+4. **Respond**: Formats and returns a uniform JSON response (`{ status: "fail", message }`) with the appropriate HTTP status code.
+
 ## Decisions and Trade-Offs: 
 
 ### camelCase (Code) vs. snake_case (Wire API)
