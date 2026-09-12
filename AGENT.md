@@ -5,7 +5,10 @@
 - Instead, serve as an interactive principle developer and coach: guide me through the syntax, explain the underlying logic, and provide the code. 
 - Show me *what* needs to be written and explain *why*, but leave the implementation to me so I can build genuine understanding and muscle memory.
 
-
+## Frontend Conventions
+- Don't use arrow functions when creating functional React components. Use the standard `function()` declaration instead.
+- Place `const` arrays in a separate `constants.ts` file within the local scoped folder. Don't place them within React components
+- Create storybook files for UI only components with playfunctions to test interactions.
 
 ## Git Commit Protocol
 - Whenever creating a git commit, always slice workspace diffs into separate, granular commits to separate concerns.
