@@ -58,18 +58,22 @@ export const authenticate = async (
     }
 };
 
-export const requirePermission = (requiredPermission: string) => {
+export const requirePermission = (...requiredPermissions: string[]) => {
     return (req: Request, res: Response, next: NextFunction): void => {
         if (!req.user) {
+            logger.warn({ path: req.path, ip: req.ip }, 'Authorization denied: User not authenticated');
             throw new AppError('Unauthorized: User not authenticated', 401);
         }
 
-        const hasPermission = req.user.permissions.includes(requiredPermission);
+        const hasPermission = requiredPermissions.some((perm) => req.user?.permissions.includes(perm));
 
         if (!hasPermission) {
-            logger.warn({ userId: req.user?._id, requiredPermission, path: req.path }, 'Authorization denied: missing permission');
+            logger.warn(
+                { userId: req.user?._id, requiredPermissions, path: req.path },
+                'Authorization denied: missing permission'
+            );
             throw new AppError(
-                `Forbidden: Missing required permission '${requiredPermission}'`,
+                `Forbidden: Missing required permission (requires one of: ${requiredPermissions.join(', ')})`,
                 403
             );
         }
