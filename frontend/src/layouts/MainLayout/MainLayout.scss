@@ -1,0 +1,128 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.main-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: $neutral-50;
+
+  &__topbar {
+    height: $navbar-height;
+    background-color: #ffffff;
+    border-bottom: 0.0625rem solid $neutral-200;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 $spacing-6;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-shadow: $shadow-sm;
+  }
+
+  &__brand {
+    font-size: $font-size-lg;
+    font-weight: 700;
+    color: $primary;
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__user-panel {
+    display: flex;
+    align-items: center;
+    gap: $spacing-4;
+  }
+
+  &__user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+
+    .user-name {
+      font-size: $font-size-sm;
+      font-weight: 600;
+      color: $neutral-800;
+    }
+
+    .user-role {
+      font-size: $font-size-xs;
+      color: $neutral-500;
+    }
+  }
+
+  &__logout-btn {
+    display: flex;
+    align-items: center;
+    gap: $spacing-1;
+    font-size: $font-size-xs;
+    color: $danger;
+    padding: $spacing-1 $spacing-3;
+    border-radius: $border-radius;
+    border: 0.0625rem solid $danger-light;
+    background-color: $danger-light;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: #fee2e2;
+    }
+  }
+
+  &__body {
+    display: flex;
+    flex: 1;
+  }
+
+  &__sidebar {
+    width: $sidebar-width;
+    background-color: #ffffff;
+    border-right: 0.0625rem solid $neutral-200;
+    display: flex;
+    flex-direction: column;
+    padding: $spacing-4 0;
+  }
+
+  &__nav {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+    padding: 0 $spacing-3;
+  }
+
+  &__nav-link {
+    display: flex;
+    align-items: center;
+    gap: $spacing-3;
+    padding: $spacing-2 $spacing-3;
+    border-radius: $border-radius;
+    color: $neutral-600;
+    font-size: $font-size-sm;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background-color: $neutral-100;
+      color: $primary;
+      text-decoration: none;
+    }
+
+    &--active {
+      background-color: $primary-light;
+      color: $primary;
+      font-weight: 600;
+
+      &:hover {
+        background-color: $primary-light;
+      }
+    }
+  }
+
+  &__content {
+    flex: 1;
+    padding: $spacing-6;
+    overflow-y: auto;
+  }
+}
