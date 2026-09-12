@@ -16,7 +16,7 @@ import {
 
 const router = Router();
 
-// In-memory storage for Excel uploads (max 10MB)
+// In-memory storage for bulk client uploads via Excel (max 10MB)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
