@@ -42,5 +42,17 @@ module.exports = {
     ],
     '@typescript-eslint/no-explicit-any': 'error',
     'import/extensions': 'off',
+    'import/no-extraneous-dependencies': [
+      'error',
+      {
+        devDependencies: [
+          '**/*.stories.*',
+          '**/*.test.*',
+          '**/*.spec.*',
+          '**/playFunctions.*',
+          'vite.config.ts',
+        ],
+      },
+    ],
   },
 };
