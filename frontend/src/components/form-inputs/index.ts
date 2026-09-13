@@ -4,3 +4,5 @@ export * from './FormTextArea/FormTextArea';
 export * from './FormTextArea/types';
 export * from './SingleSelectDropdown/SingleSelectDropdown';
 export * from './SingleSelectDropdown/types';
+export * from './MultiSelectDropdown/MultiSelectDropdown';
+export * from './MultiSelectDropdown/types';
