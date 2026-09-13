@@ -9,6 +9,9 @@
 - Don't use arrow functions when creating functional React components. Use the standard `function()` declaration instead.
 - Place `const` arrays in a separate `constants.ts` file within the local scoped folder. Don't place them within React components
 - Create storybook files for UI only components with playfunctions to test interactions.
+- Don't use props spreading (`{...props}`). Explicitly destructure, type, and pass every prop to components and JSX elements.
+- Use ESLint and Stylelint as linters following the Airbnb style guide rules.
+- Ensure all linting checks pass before commiting the code to github
 
 ## Git Commit Protocol
 - Whenever creating a git commit, always slice workspace diffs into separate, granular commits to separate concerns.
