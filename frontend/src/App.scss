@@ -9,7 +9,7 @@
 
   &__header {
     height: $navbar-height;
-    background-color: #fff;
+    background-color: $white;
     border-bottom: 1px solid $neutral-200;
     display: flex;
     align-items: center;
@@ -82,7 +82,7 @@
 
     &--primary {
       background-color: $primary;
-      color: #fff;
+      color: $white;
       border: 1px solid transparent;
 
       &:hover {
@@ -91,7 +91,7 @@
     }
 
     &--secondary {
-      background-color: #fff;
+      background-color: $white;
       color: $neutral-700;
       border: 1px solid $neutral-300;
 
