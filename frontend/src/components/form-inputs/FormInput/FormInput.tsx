@@ -1,18 +1,18 @@
 import type { ReactElement } from 'react';
-import { useController, type FieldValues } from 'react-hook-form';
+import { useController, useFormContext } from 'react-hook-form';
 import type { FormInputProps } from './types';
 import './FormInput.scss';
 
-export function FormInput<T extends FieldValues = FieldValues>({
+export function FormInput({
   name,
-  control,
   label,
   type = 'text',
   placeholder,
   disabled = false,
   id,
   className = '',
-}: FormInputProps<T>): ReactElement {
+}: FormInputProps): ReactElement {
+  const { control } = useFormContext();
   const {
     field: {
       value, onChange, onBlur, ref,

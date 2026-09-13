@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { useForm } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { FormInput } from './FormInput';
 import type { FormInputType } from './types';
@@ -25,7 +25,7 @@ function FormInputStoryWrapper({
   placeholder,
   disabled = false,
 }: StoryProps) {
-  const { control } = useForm<FormValues>({
+  const methods = useForm<FormValues>({
     resolver: yupResolver(validationSchema),
     defaultValues: {
       email: '',
@@ -37,16 +37,17 @@ function FormInputStoryWrapper({
   });
 
   return (
-    <form style={{ maxWidth: '36rem' }}>
-      <FormInput
-        name={name}
-        control={control}
-        label={label}
-        type={type}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
-    </form>
+    <FormProvider {...methods}>
+      <form style={{ maxWidth: '36rem' }}>
+        <FormInput
+          name={name}
+          label={label}
+          type={type}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+      </form>
+    </FormProvider>
   );
 }
 
