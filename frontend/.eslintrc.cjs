@@ -19,7 +19,15 @@ module.exports = {
   rules: {
     'react/react-in-jsx-scope': 'off',
     'import/prefer-default-export': 'off',
-    'react/jsx-props-no-spreading': 'error',
+    'react/jsx-props-no-spreading': [
+      'error',
+      {
+        html: 'enforce',
+        custom: 'enforce',
+        explicitSpread: 'enforce',
+        exceptions: ['FormProvider'],
+      },
+    ],
     'react/function-component-definition': [
       'error',
       {
