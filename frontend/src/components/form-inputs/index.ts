@@ -6,3 +6,5 @@ export * from './SingleSelectDropdown/SingleSelectDropdown';
 export * from './SingleSelectDropdown/types';
 export * from './MultiSelectDropdown/MultiSelectDropdown';
 export * from './MultiSelectDropdown/types';
+export * from './FormDateInput/FormDateInput';
+export * from './FormDateInput/types';

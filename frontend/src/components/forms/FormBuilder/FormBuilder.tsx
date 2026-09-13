@@ -7,6 +7,7 @@ import {
   FormTextArea,
   SingleSelectDropdown,
   MultiSelectDropdown,
+  FormDateInput,
 } from '@/components/form-inputs';
 import type { FormBuilderProps, FormFieldConfig } from './types';
 import { DEFAULT_SUBMIT_TEXT, DEFAULT_CANCEL_TEXT } from './constants';
@@ -55,6 +56,17 @@ function renderField(field: FormFieldConfig): ReactElement {
           options={field.options}
           placeholder={field.placeholder}
           noDataMessage={field.noDataMessage}
+          disabled={field.disabled}
+          id={field.id}
+        />
+      );
+    case 'date':
+      return (
+        <FormDateInput
+          name={field.name}
+          label={field.label}
+          min={field.min}
+          max={field.max}
           disabled={field.disabled}
           id={field.id}
         />

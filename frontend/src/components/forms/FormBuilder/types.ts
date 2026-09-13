@@ -33,11 +33,18 @@ export interface MultiSelectFieldConfig extends BaseFieldConfig {
   noDataMessage?: string;
 }
 
+export interface DateFieldConfig extends BaseFieldConfig {
+  fieldType: 'date';
+  min?: string;
+  max?: string;
+}
+
 export type FormFieldConfig =
   | InputFieldConfig
   | TextAreaFieldConfig
   | SingleSelectFieldConfig
-  | MultiSelectFieldConfig;
+  | MultiSelectFieldConfig
+  | DateFieldConfig;
 
 export interface FormBuilderProps<T extends FieldValues> {
   id?: string;
