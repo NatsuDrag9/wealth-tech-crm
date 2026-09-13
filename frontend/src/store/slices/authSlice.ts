@@ -19,7 +19,7 @@ export const authSlice = createSlice({
         user: UserSummary;
         accessToken: string;
         permissions?: PermissionCode[];
-      }>
+      }>,
     ) => {
       state.user = action.payload.user;
       state.accessToken = action.payload.accessToken;

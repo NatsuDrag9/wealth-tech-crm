@@ -19,7 +19,7 @@ export const toastMiddleware: Middleware = () => (next) => (action) => {
   const result = next(action);
 
   if (isFulfilled(action)) {
-    const meta = (action as { meta?: MutationMeta }).meta;
+    const { meta } = (action as { meta?: MutationMeta });
     const endpointName = meta?.arg?.endpointName;
 
     if (endpointName && SUCCESS_MESSAGES[endpointName]) {
@@ -28,9 +28,9 @@ export const toastMiddleware: Middleware = () => (next) => (action) => {
   }
 
   if (isRejectedWithValue(action)) {
-    const meta = (action as { meta?: MutationMeta }).meta;
+    const { meta } = (action as { meta?: MutationMeta });
     const endpointName = meta?.arg?.endpointName;
-    const payload = (action as { payload?: RejectedPayload }).payload;
+    const { payload } = (action as { payload?: RejectedPayload });
 
     const customMessage = endpointName ? ERROR_MESSAGES[endpointName] : undefined;
     const serverMessage = payload?.data?.message || payload?.data?.detail;
@@ -45,8 +45,8 @@ export const toastMiddleware: Middleware = () => (next) => (action) => {
 
 export const rtkQueryErrorLogger: Middleware = () => (next) => (action) => {
   if (isRejectedWithValue(action)) {
-    const meta = (action as { meta?: MutationMeta }).meta;
-    const payload = (action as { payload?: RejectedPayload }).payload;
+    const { meta } = (action as { meta?: MutationMeta });
+    const { payload } = (action as { payload?: RejectedPayload });
 
     logError(`RTK Query Error on endpoint: ${meta?.arg?.endpointName ?? 'unknown'}`, {
       status: payload?.status,

@@ -12,24 +12,22 @@ export function usePermission(): UsePermissionReturn {
   const userPermissions = useAppSelector((state) => state.auth.permissions);
 
   const hasPermission = useCallback(
-    (permission: PermissionCode): boolean => {
-      return userPermissions.includes(permission);
-    },
-    [userPermissions]
+    (permission: PermissionCode): boolean => userPermissions.includes(permission),
+    [userPermissions],
   );
 
   const hasAnyPermission = useCallback(
-    (permissions: PermissionCode[]): boolean => {
-      return permissions.some((perm) => userPermissions.includes(perm));
-    },
-    [userPermissions]
+    (permissions: PermissionCode[]): boolean => (
+      permissions.some((perm) => userPermissions.includes(perm))
+    ),
+    [userPermissions],
   );
 
   const hasAllPermissions = useCallback(
-    (permissions: PermissionCode[]): boolean => {
-      return permissions.every((perm) => userPermissions.includes(perm));
-    },
-    [userPermissions]
+    (permissions: PermissionCode[]): boolean => (
+      permissions.every((perm) => userPermissions.includes(perm))
+    ),
+    [userPermissions],
   );
 
   return { hasPermission, hasAnyPermission, hasAllPermissions };

@@ -1,8 +1,5 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { useAppSelector, useAppDispatch } from '@/store';
-import { logout } from '@/store/slices/authSlice';
-import { usePermission } from '@/hooks/usePermission';
 import {
   Layers,
   Users,
@@ -11,6 +8,9 @@ import {
   UserCog,
   LogOut,
 } from 'lucide-react';
+import { useAppSelector, useAppDispatch } from '@/store';
+import { logout } from '@/store/slices/authSlice';
+import { usePermission } from '@/hooks/usePermission';
 import { NAV_ITEMS, NavItemConfig } from '@/constants/navConstants';
 import './MainLayout.scss';
 
@@ -24,6 +24,8 @@ function renderNavIcon(iconName: NavItemConfig['iconName']): React.ReactElement 
       return <PieChart size={18} />;
     case 'users':
       return <UserCog size={18} />;
+    default:
+      return <Users size={18} />;
   }
 }
 
@@ -69,6 +71,7 @@ export function MainLayout(): React.ReactElement {
           </div>
 
           <button
+            type="button"
             className="main-layout__logout-btn"
             onClick={handleLogout}
             title="Log Out"
@@ -84,15 +87,15 @@ export function MainLayout(): React.ReactElement {
           <nav className="main-layout__nav">
             {NAV_ITEMS.filter(isItemAllowed).map((item) => (
               <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  className={getNavLinkClass}
-                >
-                  {renderNavIcon(item.iconName)}
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={getNavLinkClass}
+              >
+                {renderNavIcon(item.iconName)}
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
           </nav>
         </aside>
 

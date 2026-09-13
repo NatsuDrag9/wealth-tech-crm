@@ -21,7 +21,7 @@ export function Unauthorized(): React.ReactElement {
           You do not have the required role or permissions to view this resource. Contact your
           organization administrator if you believe this is an error.
         </p>
-        <button className="app__btn app__btn--primary" onClick={handleGoBack}>
+        <button type="button" className="app__btn app__btn--primary" onClick={handleGoBack}>
           <ArrowLeft size={16} style={{ display: 'inline', marginRight: 6 }} />
           Go Back
         </button>

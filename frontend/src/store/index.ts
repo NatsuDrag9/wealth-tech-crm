@@ -9,12 +9,11 @@ export const store = configureStore({
     auth: authReducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(
-      baseApi.middleware,
-      toastMiddleware,
-      rtkQueryErrorLogger
-    ),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(
+    baseApi.middleware,
+    toastMiddleware,
+    rtkQueryErrorLogger,
+  ),
   devTools: import.meta.env.DEV,
 });
 

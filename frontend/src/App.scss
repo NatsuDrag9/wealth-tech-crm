@@ -9,7 +9,7 @@
 
   &__header {
     height: $navbar-height;
-    background-color: #ffffff;
+    background-color: #fff;
     border-bottom: 1px solid $neutral-200;
     display: flex;
     align-items: center;
@@ -49,6 +49,7 @@
 
   &__welcome-card {
     @include card-surface;
+
     padding: $spacing-6;
     margin-bottom: $spacing-6;
   }
@@ -81,7 +82,7 @@
 
     &--primary {
       background-color: $primary;
-      color: #ffffff;
+      color: #fff;
       border: 1px solid transparent;
 
       &:hover {
@@ -90,7 +91,7 @@
     }
 
     &--secondary {
-      background-color: #ffffff;
+      background-color: #fff;
       color: $neutral-700;
       border: 1px solid $neutral-300;
 
@@ -108,6 +109,7 @@
 
   &__card {
     @include card-surface;
+
     padding: $spacing-5;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 

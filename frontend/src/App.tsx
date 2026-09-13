@@ -1,9 +1,11 @@
+import {
+  Users, PieChart, ShieldAlert, Layers, CheckCircle2,
+} from 'lucide-react';
 import { useAppSelector } from '@/store';
 import { showSuccessToast, showInfoToast } from '@/utils/toastUtils';
-import { Users, PieChart, ShieldAlert, Layers, CheckCircle2 } from 'lucide-react';
 import './App.scss';
 
-export const App = () => {
+export function App() {
   const auth = useAppSelector((state) => state.auth);
 
   return (
@@ -29,18 +31,18 @@ export const App = () => {
           </p>
           <div className="app__actions">
             <button
+              type="button"
               className="app__btn app__btn--primary"
               onClick={() => showSuccessToast('Toast notification system is active!')}
             >
               Test Success Toast
             </button>
             <button
+              type="button"
               className="app__btn app__btn--secondary"
-              onClick={() =>
-                showInfoToast(
-                  `Redux Auth Status: ${auth.isAuthenticated ? 'Authenticated' : 'Guest (Unauthenticated)'}`
-                )
-              }
+              onClick={() => showInfoToast(
+                `Redux Auth Status: ${auth.isAuthenticated ? 'Authenticated' : 'Guest (Unauthenticated)'}`,
+              )}
             >
               Check Auth State
             </button>
@@ -84,6 +86,6 @@ export const App = () => {
       </main>
     </div>
   );
-};
+}
 
 export default App;

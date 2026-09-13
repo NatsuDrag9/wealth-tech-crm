@@ -1,5 +1,7 @@
 import React from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import {
+  Routes, Route, Navigate, useLocation,
+} from 'react-router-dom';
 import { useAppSelector } from '@/store';
 import { usePermission } from '@/hooks/usePermission';
 import { RouteConfig } from '@/config/routes';
@@ -26,7 +28,7 @@ function RouteGuard({ route, children }: GuardProps): React.ReactElement {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  return <>{children}</>;
+  return children as React.ReactElement;
 }
 
 export function RoutesWithGuard({ routes }: RoutesWithGuardProps): React.ReactElement {

@@ -31,9 +31,9 @@ const rawBaseQuery = fetchBaseQuery({
 let refreshPromise: Promise<boolean> | null = null;
 
 const baseQueryWithReauth: BaseQueryFn<
-  string | FetchArgs,
-  unknown,
-  FetchBaseQueryError
+string | FetchArgs,
+unknown,
+FetchBaseQueryError
 > = async (args, api, extraOptions) => {
   let result = await rawBaseQuery(args, api, extraOptions);
 
@@ -52,7 +52,7 @@ const baseQueryWithReauth: BaseQueryFn<
           const refreshResult = await rawBaseQuery(
             { url: ENDPOINTS.REFRESH, method: 'POST' },
             api,
-            extraOptions
+            extraOptions,
           );
 
           if (refreshResult.data) {
@@ -62,7 +62,7 @@ const baseQueryWithReauth: BaseQueryFn<
                 user: data.user,
                 accessToken: data.access_token,
                 permissions: data.permissions,
-              })
+              }),
             );
             return true;
           }

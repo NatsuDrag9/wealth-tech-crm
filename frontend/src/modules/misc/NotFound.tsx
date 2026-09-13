@@ -20,7 +20,7 @@ export function NotFound(): React.ReactElement {
         <p className="misc-page__message">
           The page or resource you are attempting to access does not exist or has been moved.
         </p>
-        <button className="app__btn app__btn--primary" onClick={handleGoHome}>
+        <button type="button" className="app__btn app__btn--primary" onClick={handleGoHome}>
           <Home size={16} style={{ display: 'inline', marginRight: 6 }} />
           Return to Dashboard
         </button>

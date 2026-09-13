@@ -3,11 +3,14 @@
 
 .misc-page {
   min-height: 80vh;
+
   @include flex-center;
+
   padding: $spacing-6;
 
   &__card {
     @include card-surface;
+
     max-width: 30rem;
     width: 100%;
     padding: $spacing-8;
@@ -17,6 +20,7 @@
 
   &__icon {
     @include flex-center;
+
     width: 4.5rem;
     height: 4.5rem;
     margin: 0 auto $spacing-4;

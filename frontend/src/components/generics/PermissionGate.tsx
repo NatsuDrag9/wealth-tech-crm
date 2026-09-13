@@ -14,18 +14,21 @@ export function PermissionGate({
   strategy = 'ALL',
   fallback = null,
   children,
-}: PermissionGateProps): React.ReactElement {
+}: PermissionGateProps): React.ReactElement | null {
   const { hasPermission, hasAllPermissions, hasAnyPermission } = usePermission();
 
-  const isAllowed = Array.isArray(permission)
-    ? strategy === 'ANY'
+  let isAllowed = false;
+  if (Array.isArray(permission)) {
+    isAllowed = strategy === 'ANY'
       ? hasAnyPermission(permission)
-      : hasAllPermissions(permission)
-    : hasPermission(permission);
-
-  if (!isAllowed) {
-    return <>{fallback}</>;
+      : hasAllPermissions(permission);
+  } else {
+    isAllowed = hasPermission(permission);
   }
 
-  return <>{children}</>;
+  if (!isAllowed) {
+    return fallback as React.ReactElement | null;
+  }
+
+  return children as React.ReactElement;
 }
