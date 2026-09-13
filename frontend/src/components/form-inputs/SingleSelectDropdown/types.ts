@@ -1,15 +1,12 @@
 import type { DropdownType } from '@/types/genericTypes';
 
-export interface SingleSelectGenericDropdownProps {
+export interface SingleSelectDropdownProps {
+  name: string;
   options: DropdownType[];
-  value?: string | null;
-  onChange: (value: string, selectedOption: DropdownType) => void;
-  onBlur?: () => void;
   label?: string;
   placeholder?: string;
   noDataMessage?: string;
   disabled?: boolean;
-  error?: string;
   id?: string;
   className?: string;
 }

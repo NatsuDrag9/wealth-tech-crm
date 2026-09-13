@@ -19,6 +19,7 @@ export function SingleSelectGenericDropdown({
   options,
   value = null,
   onChange,
+  onBlur,
   label,
   placeholder = DEFAULT_DROPDOWN_PLACEHOLDER,
   noDataMessage = NO_DATA_MESSAGE,
@@ -63,6 +64,7 @@ export function SingleSelectGenericDropdown({
         && !containerRef.current.contains(event.target as Node)
       ) {
         setIsOpen(false);
+        onBlur?.();
       }
     }
 
@@ -72,7 +74,17 @@ export function SingleSelectGenericDropdown({
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
     };
-  }, [isOpen]);
+  }, [isOpen, onBlur]);
+
+  function handleBlur(event: React.FocusEvent<HTMLDivElement>) {
+    if (
+      containerRef.current
+      && !containerRef.current.contains(event.relatedTarget as Node)
+    ) {
+      setIsOpen(false);
+      onBlur?.();
+    }
+  }
 
   function toggleOpen() {
     if (!disabled) {
@@ -83,6 +95,7 @@ export function SingleSelectGenericDropdown({
   function handleSelect(option: DropdownType) {
     onChange(option.value, option);
     setIsOpen(false);
+    onBlur?.();
   }
 
   function handleTypeahead(char: string) {
@@ -119,6 +132,7 @@ export function SingleSelectGenericDropdown({
 
     if (e.key === 'Escape') {
       setIsOpen(false);
+      onBlur?.();
       return;
     }
 
@@ -182,6 +196,7 @@ export function SingleSelectGenericDropdown({
       ref={containerRef}
       id={id}
       className={`single-select-dropdown ${className}`.trim()}
+      onBlur={handleBlur}
     >
       {label ? (
         <span className="single-select-dropdown__label">{label}</span>
@@ -193,6 +208,7 @@ export function SingleSelectGenericDropdown({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-disabled={disabled}
+        aria-describedby={error && id ? `${id}-error` : undefined}
         onClick={toggleOpen}
         onKeyDown={handleKeyDown}
         className={controlClasses}
@@ -255,7 +271,13 @@ export function SingleSelectGenericDropdown({
       ) : null}
 
       {error ? (
-        <span className="single-select-dropdown__error-text">{error}</span>
+        <span
+          id={id ? `${id}-error` : undefined}
+          className="single-select-dropdown__error-text"
+          role="alert"
+        >
+          {error}
+        </span>
       ) : null}
     </div>
   );
