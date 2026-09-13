@@ -1,0 +1,16 @@
+{
+  "extends": [
+    "stylelint-config-standard-scss"
+  ],
+  "rules": {
+    "selector-class-pattern": null,
+    "no-descending-specificity": null,
+    "scss/at-extend-no-missing-placeholder": null,
+    "value-keyword-case": [
+      "lower",
+      {
+        "ignoreProperties": ["font-family"]
+      }
+    ]
+  }
+}
