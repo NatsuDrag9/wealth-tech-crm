@@ -11,6 +11,7 @@
 - Create storybook files for UI only components with playfunctions to test interactions.
 - Don't use props spreading (`{...props}`). Explicitly destructure, type, and pass every prop to components and JSX elements.
 - Use ESLint and Stylelint as linters following the Airbnb style guide rules.
+- Use only colors defined in the variables file. Don't hard code colors in any of the component scss files.
 - Ensure all linting checks pass before commiting the code to github
 
 ## Git Commit Protocol
