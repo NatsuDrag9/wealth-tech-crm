@@ -1,0 +1,118 @@
+@use '@/styles/variables' as *;
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: $spacing-3;
+  padding: $spacing-3 $spacing-4;
+  font-family: $font-family;
+  font-size: $font-size-sm;
+  color: $neutral-700;
+  background-color: $white;
+  border-top: 1px solid $neutral-200;
+  user-select: none;
+
+  &__info {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+    color: $neutral-600;
+    font-size: $font-size-sm;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: $spacing-4;
+    flex-wrap: wrap;
+  }
+
+  &__page-size {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__select {
+    height: 3.2rem;
+    padding: 0 $spacing-6 0 $spacing-2;
+    font-size: $font-size-sm;
+    font-family: inherit;
+    color: $neutral-800;
+    background-color: $white;
+    border: 1px solid $neutral-300;
+    border-radius: $border-radius;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1.4rem;
+    transition: border-color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      border-color: $neutral-400;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+      border-color: $primary;
+    }
+
+    &:disabled {
+      background-color: $neutral-200;
+      cursor: not-allowed;
+      color: $neutral-400;
+    }
+  }
+
+  &__nav {
+    display: flex;
+    align-items: center;
+    gap: $spacing-1;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.2rem;
+    height: 3.2rem;
+    padding: 0;
+    background-color: $white;
+    border: 1px solid $neutral-300;
+    border-radius: $border-radius;
+    color: $neutral-700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background-color: $neutral-100;
+      border-color: $neutral-400;
+      color: $neutral-900;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      background-color: $neutral-50;
+      border-color: $neutral-200;
+      color: $neutral-400;
+      cursor: not-allowed;
+    }
+  }
+
+  &__status {
+    font-size: $font-size-sm;
+    font-weight: 500;
+    color: $neutral-800;
+    padding: 0 $spacing-2;
+    white-space: nowrap;
+  }
+}
