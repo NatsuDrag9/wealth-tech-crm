@@ -10,7 +10,7 @@
   &__topbar {
     height: $navbar-height;
     background-color: $white;
-    border-bottom: 0.0625rem solid $neutral-200;
+    border-bottom: 1px solid $neutral-200;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -61,7 +61,7 @@
     color: $danger;
     padding: $spacing-1 $spacing-3;
     border-radius: $border-radius;
-    border: 0.0625rem solid $danger-light;
+    border: 1px solid $danger-light;
     background-color: $danger-light;
     transition: background-color 0.2s ease;
 
@@ -78,7 +78,7 @@
   &__sidebar {
     width: $sidebar-width;
     background-color: $white;
-    border-right: 0.0625rem solid $neutral-200;
+    border-right: 1px solid $neutral-200;
     display: flex;
     flex-direction: column;
     padding: $spacing-4 0;
