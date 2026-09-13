@@ -1,0 +1,30 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.client-drawer-form {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-4;
+
+  &__grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-3;
+  }
+
+  &__section-title {
+    margin: $spacing-2 0 0;
+    font-size: $font-size-base;
+    font-weight: 600;
+    color: $neutral-800;
+    border-bottom: 1px solid $neutral-200;
+    padding-bottom: $spacing-1;
+  }
+
+  &__footer-actions {
+    display: flex;
+    gap: $spacing-3;
+    align-items: center;
+    justify-content: flex-end;
+  }
+}

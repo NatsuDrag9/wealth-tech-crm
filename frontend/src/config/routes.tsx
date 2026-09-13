@@ -5,6 +5,7 @@ import { MainLayout } from '@/layouts/MainLayout/MainLayout';
 import { Unauthorized } from '@/modules/misc/Unauthorized';
 import { NotFound } from '@/modules/misc/NotFound';
 import { UserManager } from '@/modules/user-manager/UserManager';
+import { ClientManager } from '@/modules/client-manager/ClientManager';
 import { App } from '@/App';
 
 export interface RouteConfig {
@@ -34,7 +35,7 @@ export const APP_ROUTES: readonly RouteConfig[] = [
       },
       {
         path: 'clients',
-        element: <App />,
+        element: <ClientManager />,
         requiredPermissions: [PermissionsEnum.CLIENT_READ],
       },
       {

@@ -1,0 +1,77 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.client-profile-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-5;
+
+  &__card {
+    padding: $spacing-4;
+    background-color: $neutral-50;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+  }
+
+  &__section-header {
+    margin: 0 0 $spacing-3;
+    font-size: $font-size-base;
+    font-weight: 600;
+    color: $neutral-900;
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-3;
+  }
+
+  &__data-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__label {
+    font-size: $font-size-xs;
+    font-weight: 500;
+    color: $neutral-500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__value {
+    font-size: $font-size-sm;
+    font-weight: 600;
+    color: $neutral-800;
+  }
+
+  &__kyc-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-3 $spacing-4;
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius;
+  }
+
+  &__kyc-actions {
+    display: flex;
+    gap: $spacing-2;
+  }
+
+  &__jump-actions {
+    display: flex;
+    gap: $spacing-3;
+    margin-top: $spacing-2;
+  }
+
+  &__footer-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}

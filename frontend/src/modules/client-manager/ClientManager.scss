@@ -1,0 +1,175 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.client-manager {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-5;
+  padding: $spacing-6;
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: $font-size-2xl;
+    font-weight: 700;
+    color: $neutral-900;
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: $font-size-sm;
+    color: $neutral-500;
+  }
+
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-3;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-3;
+    align-items: center;
+  }
+
+  &__search {
+    width: 28rem;
+  }
+
+  &__dropdown {
+    width: 18rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $spacing-3;
+    align-items: center;
+  }
+
+  &__bulk-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-3 $spacing-5;
+    background-color: $primary-light;
+    border: 1px solid $primary;
+    border-radius: $border-radius-md;
+    animation: bulk-banner-slide-in 0.2s ease-out;
+  }
+
+  &__bulk-count {
+    font-size: $font-size-sm;
+    color: $primary;
+
+    strong {
+      font-weight: 700;
+    }
+  }
+
+  &__bulk-actions {
+    display: flex;
+    gap: $spacing-3;
+    align-items: center;
+  }
+
+  &__table-wrapper {
+    @include card-surface;
+
+    overflow: hidden;
+  }
+
+  &__client-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__client-name {
+    font-weight: 600;
+    color: $neutral-900;
+  }
+
+  &__pan-tag {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+  }
+
+  &__contact-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__email {
+    font-size: $font-size-sm;
+    color: $neutral-700;
+  }
+
+  &__phone {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+  }
+
+  &__rm-cell {
+    font-size: $font-size-sm;
+    color: $neutral-700;
+  }
+
+  &__badge {
+    display: inline-block;
+    padding: 0.2rem $spacing-2;
+    font-size: $font-size-xs;
+    font-weight: 500;
+    border-radius: $border-radius-full;
+
+    &--active,
+    &--verified {
+      color: $success;
+      background-color: $success-light;
+    }
+
+    &--onboarding,
+    &--pending {
+      color: $warning;
+      background-color: $warning-light;
+    }
+
+    &--inactive,
+    &--rejected {
+      color: $danger;
+      background-color: $danger-light;
+    }
+
+    &--neutral {
+      color: $neutral-600;
+      background-color: $neutral-100;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: $spacing-2;
+  }
+}
+
+@keyframes bulk-banner-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
