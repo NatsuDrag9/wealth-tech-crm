@@ -1,0 +1,60 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.user-tab {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-4;
+
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-3;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__search {
+    width: 100%;
+    max-width: 34rem;
+  }
+
+  &__table-wrapper {
+    @include card-surface;
+
+    overflow: hidden;
+  }
+
+  &__name-cell {
+    font-weight: 600;
+    color: $neutral-900;
+  }
+
+  &__email-cell {
+    color: $neutral-600;
+  }
+
+  &__badge {
+    display: inline-block;
+    padding: 0.2rem $spacing-2;
+    font-size: $font-size-xs;
+    font-weight: 500;
+    border-radius: $border-radius-full;
+
+    &--group {
+      color: $primary;
+      background-color: $primary-light;
+    }
+
+    &--role {
+      color: $secondary;
+      background-color: $secondary-light;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: $spacing-2;
+  }
+}

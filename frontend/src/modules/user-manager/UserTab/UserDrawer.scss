@@ -1,0 +1,15 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.user-drawer-form {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-4;
+
+  &__footer-actions {
+    display: flex;
+    gap: $spacing-3;
+    align-items: center;
+    justify-content: flex-end;
+  }
+}

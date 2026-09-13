@@ -122,6 +122,16 @@ export const userManagerApi = baseApi.injectEndpoints({
         : [{ type: 'Role', id: 'LIST' }]),
     }),
 
+    getGroupRoles: builder.query<RoleRecord[], string | number>({
+      query: (groupId) => ({ url: ENDPOINTS.GROUP_ROLES(groupId) }),
+      providesTags: (result) => (result
+        ? [
+          ...result.map(({ id }) => ({ type: 'Role' as const, id })),
+          { type: 'Role', id: 'LIST' },
+        ]
+        : [{ type: 'Role', id: 'LIST' }]),
+    }),
+
     getRoleById: builder.query<RoleRecord, string | number>({
       query: (id) => ({ url: ENDPOINTS.ROLE_DETAIL(id) }),
       providesTags: (_result, _error, id) => [{ type: 'Role', id }],
@@ -205,6 +215,7 @@ export const {
   useCreateGroupMutation,
   useUpdateGroupMutation,
   useGetRolesQuery,
+  useGetGroupRolesQuery,
   useGetRoleByIdQuery,
   useCreateRoleMutation,
   useUpdateRoleMutation,

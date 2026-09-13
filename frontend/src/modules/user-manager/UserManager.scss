@@ -1,0 +1,81 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.user-manager {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-5;
+  padding: $spacing-6;
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: $font-size-2xl;
+    font-weight: 700;
+    color: $neutral-900;
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: $font-size-sm;
+    color: $neutral-500;
+  }
+
+  &__tab-nav {
+    display: flex;
+    gap: $spacing-6;
+    border-bottom: 1px solid $neutral-200;
+  }
+
+  &__tab-btn {
+    display: flex;
+    gap: $spacing-2;
+    align-items: center;
+    padding: $spacing-3 0;
+    font-size: $font-size-base;
+    font-weight: 500;
+    color: $neutral-500;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+      color: $neutral-800;
+    }
+
+    &--active {
+      font-weight: 600;
+      color: $primary;
+      border-bottom-color: $primary;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+      border-radius: $border-radius-sm;
+    }
+  }
+
+  &__tab-content {
+    animation: tab-content-fade-in 0.2s ease-out;
+  }
+}
+
+@keyframes tab-content-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

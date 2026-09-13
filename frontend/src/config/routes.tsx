@@ -4,6 +4,7 @@ import { PermissionsEnum, PermissionCode } from '@/constants/authConstants';
 import { MainLayout } from '@/layouts/MainLayout/MainLayout';
 import { Unauthorized } from '@/modules/misc/Unauthorized';
 import { NotFound } from '@/modules/misc/NotFound';
+import { UserManager } from '@/modules/user-manager/UserManager';
 import { App } from '@/App';
 
 export interface RouteConfig {
@@ -48,7 +49,7 @@ export const APP_ROUTES: readonly RouteConfig[] = [
       },
       {
         path: 'user-manager',
-        element: <App />,
+        element: <UserManager />,
         requiredPermissions: [PermissionsEnum.USER_READ],
       },
     ],
