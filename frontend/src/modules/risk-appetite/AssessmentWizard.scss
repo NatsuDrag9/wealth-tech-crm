@@ -1,0 +1,218 @@
+@use '@/styles/variables' as *;
+
+.assessment-wizard {
+  background-color: $white;
+  border: 1px solid $neutral-200;
+  border-radius: $border-radius-lg;
+  box-shadow: $shadow-sm;
+  padding: $spacing-6;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-6;
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
+    border-bottom: 1px solid $neutral-200;
+    padding-bottom: $spacing-4;
+  }
+
+  &__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  &__progress-count {
+    font-size: $font-size-sm;
+    font-weight: 700;
+    color: $neutral-800;
+  }
+
+  &__percent-pill {
+    font-size: $font-size-xs;
+    font-weight: 600;
+    color: $primary;
+    background-color: $primary-light;
+    padding: $spacing-1 $spacing-3;
+    border-radius: $border-radius-full;
+  }
+
+  &__progress-bar {
+    width: 100%;
+    height: 0.6rem;
+    background-color: $neutral-100;
+    border-radius: $border-radius-full;
+    overflow: hidden;
+  }
+
+  &__progress-fill {
+    height: 100%;
+    background-color: $primary;
+    border-radius: $border-radius-full;
+    transition: width 0.3s ease;
+  }
+
+  &__question-container {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-5;
+  }
+
+  &__question-header {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-2;
+  }
+
+  &__question-tag {
+    align-self: flex-start;
+    font-size: $font-size-xs;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $neutral-500;
+  }
+
+  &__question-text {
+    font-size: $font-size-xl;
+    font-weight: 700;
+    color: $neutral-900;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  &__rationale {
+    display: flex;
+    gap: $spacing-3;
+    padding: $spacing-4;
+    background-color: $neutral-50;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    font-size: $font-size-sm;
+    color: $neutral-600;
+    line-height: 1.5;
+
+    svg {
+      flex-shrink: 0;
+      color: $neutral-400;
+      margin-top: 0.2rem;
+    }
+  }
+
+  &__options-list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
+  }
+
+  &__option-card {
+    display: flex;
+    align-items: center;
+    gap: $spacing-4;
+    padding: $spacing-4 $spacing-5;
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+
+    &:hover:not(:disabled) {
+      border-color: $primary;
+      background-color: $neutral-50;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+    }
+
+    &--selected {
+      border-color: $primary;
+      background-color: $primary-light;
+
+      &:hover {
+        background-color: $primary-light;
+      }
+    }
+  }
+
+  &__option-letter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: $border-radius-full;
+    background-color: $neutral-100;
+    color: $neutral-700;
+    font-size: $font-size-sm;
+    font-weight: 700;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+
+    .assessment-wizard__option-card--selected & {
+      background-color: $primary;
+      color: $white;
+    }
+  }
+
+  &__option-text {
+    font-size: $font-size-base;
+    font-weight: 500;
+    color: $neutral-800;
+    line-height: 1.4;
+    flex-grow: 1;
+
+    .assessment-wizard__option-card--selected & {
+      color: $primary;
+      font-weight: 600;
+    }
+  }
+
+  &__radio-indicator {
+    width: 2rem;
+    height: 2rem;
+    border-radius: $border-radius-full;
+    border: 1px solid $neutral-300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    .assessment-wizard__option-card--selected & {
+      border-color: $primary;
+      background-color: $primary;
+    }
+  }
+
+  &__radio-dot {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: $border-radius-full;
+    background-color: $white;
+    display: none;
+
+    .assessment-wizard__option-card--selected & {
+      display: block;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid $neutral-200;
+    padding-top: $spacing-5;
+  }
+
+  &__navigation-buttons {
+    display: flex;
+    gap: $spacing-3;
+  }
+}

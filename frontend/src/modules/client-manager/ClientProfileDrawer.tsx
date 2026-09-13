@@ -204,7 +204,7 @@ export function ClientProfileDrawer({
               iconPosition="left"
               onClick={() => {
                 onClose();
-                navigate('/risk-appetite');
+                navigate(client ? `/risk-appetite?clientId=${client.id}` : '/risk-appetite');
               }}
             />
             <MainButton
@@ -215,7 +215,7 @@ export function ClientProfileDrawer({
               iconPosition="left"
               onClick={() => {
                 onClose();
-                navigate('/portfolio-reviews');
+                navigate(client ? `/portfolio-reviews?clientId=${client.id}` : '/portfolio-reviews');
               }}
             />
           </div>

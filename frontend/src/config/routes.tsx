@@ -6,6 +6,7 @@ import { Unauthorized } from '@/modules/misc/Unauthorized';
 import { NotFound } from '@/modules/misc/NotFound';
 import { UserManager } from '@/modules/user-manager/UserManager';
 import { ClientManager } from '@/modules/client-manager/ClientManager';
+import { RiskAppetite } from '@/modules/risk-appetite/RiskAppetite';
 import { App } from '@/App';
 
 export interface RouteConfig {
@@ -40,7 +41,7 @@ export const APP_ROUTES: readonly RouteConfig[] = [
       },
       {
         path: 'risk-appetite',
-        element: <App />,
+        element: <RiskAppetite />,
         requiredPermissions: [PermissionsEnum.RISK_APPETITE_READ],
       },
       {
