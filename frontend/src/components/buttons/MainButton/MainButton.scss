@@ -1,0 +1,123 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.main-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-2;
+  font-family: $font-family;
+  font-weight: 500;
+  border-radius: $border-radius;
+  border: 1px solid $transparent;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-decoration: none;
+  user-select: none;
+  white-space: nowrap;
+
+  &:focus-visible {
+    outline: 2px solid $primary;
+    outline-offset: 2px;
+  }
+
+  // --- Sizes (1rem = 10px) ---
+  &--sm {
+    height: 3rem;
+    padding: 0 $spacing-3;
+    font-size: $font-size-xs;
+  }
+
+  &--md {
+    height: 3.8rem;
+    padding: 0 $spacing-4;
+    font-size: $font-size-sm;
+  }
+
+  &--lg {
+    height: 4.6rem;
+    padding: 0 $spacing-6;
+    font-size: $font-size-base;
+  }
+
+  // --- Variants ---
+  &--primary {
+    background-color: $primary;
+    color: $white;
+    border-color: $primary;
+
+    &:hover:not(:disabled) {
+      background-color: $primary-hover;
+      border-color: $primary-hover;
+    }
+
+    &:active:not(:disabled) {
+      background-color: $primary-active;
+      border-color: $primary-active;
+    }
+  }
+
+  &--secondary {
+    background-color: $white;
+    color: $neutral-700;
+    border-color: $neutral-300;
+
+    &:hover:not(:disabled) {
+      background-color: $neutral-100;
+      color: $neutral-900;
+      border-color: $neutral-400;
+    }
+
+    &:active:not(:disabled) {
+      background-color: $neutral-200;
+    }
+  }
+
+  // --- States ---
+  &--disabled,
+  &:disabled {
+    background-color: $neutral-200;
+    color: $neutral-400;
+    border-color: $neutral-200;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  &--loading {
+    cursor: wait;
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  // --- Sub-elements ---
+  &__spinner {
+    display: inline-block;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: 2px solid currentcolor;
+    border-right-color: $transparent;
+    border-radius: $border-radius-full;
+    animation: main-btn-spin 0.6s linear infinite;
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@keyframes main-btn-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
