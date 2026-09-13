@@ -1,0 +1,238 @@
+@use '@/styles/variables' as *;
+
+.permission-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid $neutral-200;
+  border-radius: $border-radius;
+  background-color: $white;
+}
+
+.permission-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: $font-family;
+  font-size: $font-size-sm;
+
+  th {
+    padding: $spacing-3 $spacing-4;
+    text-align: center;
+    vertical-align: middle;
+    font-weight: 600;
+    font-size: $font-size-xs;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $neutral-600;
+    background-color: $neutral-50;
+    border-bottom: 1px solid $neutral-200;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+  }
+
+  td {
+    padding: $spacing-3 $spacing-4;
+    text-align: center;
+    vertical-align: middle;
+    color: $neutral-800;
+    border-bottom: 1px solid $neutral-200;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  &__header-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: $spacing-2;
+
+    input[type="checkbox"] {
+      width: 1.6rem;
+      height: 1.6rem;
+      accent-color: $primary;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+  }
+
+  &__category-row {
+    background-color: $neutral-100;
+    border-top: 1px solid $neutral-200;
+    border-bottom: 1px solid $neutral-200;
+
+    td {
+      padding: $spacing-3 $spacing-4;
+      text-align: left;
+      font-weight: 700;
+      font-size: $font-size-sm;
+      color: $neutral-900;
+      background-color: $neutral-100;
+    }
+  }
+
+  &__category-header {
+    display: inline-flex;
+    align-items: center;
+    gap: $spacing-3;
+
+    input[type="checkbox"] {
+      width: 1.6rem;
+      height: 1.6rem;
+      accent-color: $primary;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+  }
+
+  &__category-badge {
+    display: inline-block;
+    padding: 0.2rem 0.8rem;
+    font-size: $font-size-xs;
+    font-weight: 500;
+    color: $neutral-600;
+    background-color: $neutral-200;
+    border-radius: $border-radius-sm;
+  }
+
+  &__row {
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background-color: $neutral-50;
+    }
+
+    &--selected {
+      background-color: $primary-light;
+
+      &:hover {
+        background-color: $primary-light;
+      }
+    }
+
+    &--readonly {
+      opacity: 0.65;
+    }
+  }
+
+  &__resource-cell {
+    text-align: left;
+    font-weight: 500;
+  }
+
+  &__resource-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+  }
+
+  &__resource-name {
+    font-size: $font-size-sm;
+    color: $neutral-900;
+  }
+
+  &__resource-codename {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+    font-family: monospace;
+  }
+
+  &__checkbox-cell {
+    width: 9rem;
+    padding: $spacing-3 $spacing-2;
+    text-align: center;
+
+    input[type="checkbox"] {
+      width: 1.6rem;
+      height: 1.6rem;
+      accent-color: $primary;
+      cursor: pointer;
+      vertical-align: middle;
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      &:focus-visible {
+        outline: 2px solid $primary;
+        outline-offset: 2px;
+      }
+    }
+  }
+
+  &__na-indicator,
+  &__dash {
+    color: $neutral-400;
+    font-weight: 600;
+    user-select: none;
+  }
+
+  &__check-icon {
+    display: inline-block;
+    color: $success;
+    vertical-align: middle;
+  }
+
+  &__readonly-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+
+    &--granted {
+      color: $success;
+      font-size: 1.6rem;
+    }
+
+    &--denied {
+      color: $neutral-300;
+      font-size: 1.6rem;
+    }
+  }
+
+  &__empty {
+    padding: $spacing-8 $spacing-4;
+    text-align: center;
+    color: $neutral-500;
+    font-size: $font-size-base;
+  }
+
+  &__skeleton-bar {
+    height: 1.6rem;
+    margin: 0 auto;
+    background-color: $neutral-200;
+    border-radius: $border-radius-sm;
+    animation: permission-table-pulse 1.5s infinite ease-in-out;
+  }
+
+  &__sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+@keyframes permission-table-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
