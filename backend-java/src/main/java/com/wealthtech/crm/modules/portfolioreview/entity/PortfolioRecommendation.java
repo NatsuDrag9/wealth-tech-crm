@@ -46,6 +46,9 @@ public class PortfolioRecommendation {
     @Column(name = "generated_document_url")
     private String generatedDocumentUrl;
 
+    @Column(name = "document_s3_key")
+    private String documentS3Key;
+
     @OneToMany(mappedBy = "recommendation", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<RecommendationFundItem> funds = new ArrayList<>();

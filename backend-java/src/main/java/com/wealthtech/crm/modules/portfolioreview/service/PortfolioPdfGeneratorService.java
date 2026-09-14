@@ -1,7 +1,7 @@
 package com.wealthtech.crm.modules.portfolioreview.service;
 
 import java.awt.Color;
-import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,130 +14,160 @@ import org.springframework.stereotype.Service;
 
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
+import com.wealthtech.crm.infrastructure.s3.S3Service;
+import com.wealthtech.crm.modules.portfolioreview.dto.GeneratedPdfResult;
 import com.wealthtech.crm.modules.portfolioreview.entity.PortfolioRecommendation;
 import com.wealthtech.crm.modules.portfolioreview.entity.RecommendationFundItem;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Service that compiles and renders branded investment recommendation proposal PDFs
+ * completely in-memory (RAM) and uploads the binary payload directly to AWS S3 / LocalStack.
+ *
+ * Enforces ZERO local filesystem storage on disk:
+ * - Rendered in a ByteArrayOutputStream in-memory buffer
+ * - Uploaded directly to S3 via S3Service
+ * - Generates secure time-limited pre-signed download URLs
+ * - Deletes any legacy local files on disk if found
+ */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class PortfolioPdfGeneratorService {
 
-    private static final String UPLOAD_DIR = "uploads/recommendations";
+    private final S3Service s3Service;
 
-    public String generateRecommendationPdf(PortfolioRecommendation recommendation) {
+    public GeneratedPdfResult generateRecommendationPdf(PortfolioRecommendation recommendation) {
         try {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
-
-            String filename = "recommendation_" + recommendation.getId() + ".pdf";
-            Path filePath = uploadPath.resolve(filename);
-
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
             Document document = new Document(PageSize.A4, 36, 36, 40, 40);
-            try (OutputStream out = Files.newOutputStream(filePath)) {
-                PdfWriter.getInstance(document, out);
-                document.open();
+            PdfWriter.getInstance(document, out);
+            document.open();
 
-                // 1. Fonts & Colors
-                Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(24, 43, 73));
-                Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.DARK_GRAY);
-                Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-                Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.BLACK);
-                Font boldCellFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.BLACK);
-                Font disclaimerFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, Color.GRAY);
+            // 1. Fonts & Colors
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(24, 43, 73));
+            Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.DARK_GRAY);
+            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
+            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.BLACK);
+            Font boldCellFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.BLACK);
+            Font disclaimerFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, Color.GRAY);
 
-                // 2. Title & Header Banner
-                Paragraph title = new Paragraph("INVESTMENT RECOMMENDATION PROPOSAL", titleFont);
-                title.setAlignment(Element.ALIGN_CENTER);
-                document.add(title);
+            // 2. Title & Header Banner
+            Paragraph title = new Paragraph("INVESTMENT RECOMMENDATION PROPOSAL", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
 
-                Paragraph subtitle = new Paragraph("WealthTech CRM — Client Advisory Services", subTitleFont);
-                subtitle.setAlignment(Element.ALIGN_CENTER);
-                subtitle.setSpacingAfter(15);
-                document.add(subtitle);
+            Paragraph subtitle = new Paragraph("WealthTech CRM — Client Advisory Services", subTitleFont);
+            subtitle.setAlignment(Element.ALIGN_CENTER);
+            subtitle.setSpacingAfter(15);
+            document.add(subtitle);
 
-                // 3. Metadata Info Box
-                PdfPTable infoTable = new PdfPTable(2);
-                infoTable.setWidthPercentage(100);
-                infoTable.setSpacingAfter(15);
+            // 3. Metadata Info Box
+            PdfPTable infoTable = new PdfPTable(2);
+            infoTable.setWidthPercentage(100);
+            infoTable.setSpacingAfter(15);
 
-                infoTable.addCell(createMetaCell("Client ID: " + recommendation.getClientId(), cellFont));
-                infoTable.addCell(createMetaCell("Recommendation ID: #" + recommendation.getId(), cellFont));
-                infoTable.addCell(createMetaCell("Flow Type: " + (recommendation.getFlowType() != null ? recommendation.getFlowType().getDisplayName() : "N/A"), cellFont));
-                infoTable.addCell(createMetaCell("Risk Category: " + (recommendation.getInvestorCategory() != null ? recommendation.getInvestorCategory().getDisplayName() : "N/A"), cellFont));
-                if (recommendation.getCreatedAt() != null) {
-                    infoTable.addCell(createMetaCell("Generated On: " + recommendation.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm")), cellFont));
-                }
-                infoTable.addCell(createMetaCell("Status: FINAL PROPOSAL", boldCellFont));
-                document.add(infoTable);
+            infoTable.addCell(createMetaCell("Client ID: " + recommendation.getClientId(), cellFont));
+            infoTable.addCell(createMetaCell("Recommendation ID: #" + recommendation.getId(), cellFont));
+            infoTable.addCell(createMetaCell("Flow Type: " + (recommendation.getFlowType() != null ? recommendation.getFlowType().getDisplayName() : "N/A"), cellFont));
+            infoTable.addCell(createMetaCell("Risk Category: " + (recommendation.getInvestorCategory() != null ? recommendation.getInvestorCategory().getDisplayName() : "N/A"), cellFont));
+            if (recommendation.getCreatedAt() != null) {
+                infoTable.addCell(createMetaCell("Generated On: " + recommendation.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm")), cellFont));
+            }
+            infoTable.addCell(createMetaCell("Status: FINAL PROPOSAL", boldCellFont));
+            document.add(infoTable);
 
-                // 4. Recommendation Funds Table
-                Paragraph tableHeader = new Paragraph("Proposed Fund Allocations", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.DARK_GRAY));
-                tableHeader.setSpacingAfter(8);
-                document.add(tableHeader);
+            // 4. Recommendation Funds Table
+            Paragraph tableHeader = new Paragraph("Proposed Fund Allocations", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.DARK_GRAY));
+            tableHeader.setSpacingAfter(8);
+            document.add(tableHeader);
 
-                PdfPTable table = new PdfPTable(new float[]{1f, 4f, 2.5f, 2.5f, 2.5f, 2.5f});
-                table.setWidthPercentage(100);
-                table.setSpacingAfter(15);
+            PdfPTable table = new PdfPTable(new float[]{1f, 4f, 2.5f, 2.5f, 2.5f, 2.5f});
+            table.setWidthPercentage(100);
+            table.setSpacingAfter(15);
 
-                Color headerBg = new Color(30, 58, 138); // Navy blue
-                table.addCell(createHeaderCell("#", headerFont, headerBg));
-                table.addCell(createHeaderCell("Fund Name", headerFont, headerBg));
-                table.addCell(createHeaderCell("ISIN", headerFont, headerBg));
-                table.addCell(createHeaderCell("Asset Class", headerFont, headerBg));
-                table.addCell(createHeaderCell("Amount (INR)", headerFont, headerBg));
-                table.addCell(createHeaderCell("Replaces", headerFont, headerBg));
+            Color headerBg = new Color(30, 58, 138); // Navy blue
+            table.addCell(createHeaderCell("#", headerFont, headerBg));
+            table.addCell(createHeaderCell("Fund Name", headerFont, headerBg));
+            table.addCell(createHeaderCell("ISIN", headerFont, headerBg));
+            table.addCell(createHeaderCell("Asset Class", headerFont, headerBg));
+            table.addCell(createHeaderCell("Amount (INR)", headerFont, headerBg));
+            table.addCell(createHeaderCell("Replaces", headerFont, headerBg));
 
-                BigDecimal totalAllocated = BigDecimal.ZERO;
-                NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("en", "IN"));
+            BigDecimal totalAllocated = BigDecimal.ZERO;
+            NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("en", "IN"));
 
-                int index = 1;
-                for (RecommendationFundItem item : recommendation.getFunds()) {
-                    table.addCell(createBodyCell(String.valueOf(item.getDisplayOrder() != null ? item.getDisplayOrder() : index++), cellFont));
-                    table.addCell(createBodyCell(item.getEligibleFund().getFundName(), cellFont));
-                    table.addCell(createBodyCell(item.getEligibleFund().getIsin(), cellFont));
-                    table.addCell(createBodyCell(item.getEligibleFund().getAssetClass() + " (" + item.getEligibleFund().getFundSubCategory() + ")", cellFont));
-                    
-                    String formattedAmount = currencyFormat.format(item.getAmount()).replace("₹", "INR ");
-                    table.addCell(createBodyCell(formattedAmount, boldCellFont));
+            int index = 1;
+            for (RecommendationFundItem item : recommendation.getFunds()) {
+                table.addCell(createBodyCell(String.valueOf(item.getDisplayOrder() != null ? item.getDisplayOrder() : index++), cellFont));
+                table.addCell(createBodyCell(item.getEligibleFund().getFundName(), cellFont));
+                table.addCell(createBodyCell(item.getEligibleFund().getIsin(), cellFont));
+                table.addCell(createBodyCell(item.getEligibleFund().getAssetClass() + " (" + item.getEligibleFund().getFundSubCategory() + ")", cellFont));
+                
+                String formattedAmount = currencyFormat.format(item.getAmount()).replace("₹", "INR ");
+                table.addCell(createBodyCell(formattedAmount, boldCellFont));
 
-                    String replaces = (item.getReplacesEntry() != null) 
-                            ? item.getReplacesEntry().getFundName() 
-                            : "New Allocation";
-                    table.addCell(createBodyCell(replaces, cellFont));
+                String replaces = (item.getReplacesEntry() != null) 
+                        ? item.getReplacesEntry().getFundName() 
+                        : "New Allocation";
+                table.addCell(createBodyCell(replaces, cellFont));
 
-                    totalAllocated = totalAllocated.add(item.getAmount());
-                }
-
-                // Total Row
-                PdfPCell totalLabel = new PdfPCell(new Phrase("Total Allocation", boldCellFont));
-                totalLabel.setColspan(4);
-                totalLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                totalLabel.setPadding(6);
-                totalLabel.setBackgroundColor(new Color(243, 244, 246));
-                table.addCell(totalLabel);
-
-                PdfPCell totalVal = new PdfPCell(new Phrase(currencyFormat.format(totalAllocated).replace("₹", "INR "), boldCellFont));
-                totalVal.setColspan(2);
-                totalVal.setPadding(6);
-                totalVal.setBackgroundColor(new Color(243, 244, 246));
-                table.addCell(totalVal);
-
-                document.add(table);
-
-                // 5. Statutory Disclaimer
-                Paragraph disclaimer = new Paragraph(
-                        "Disclaimer: This investment proposal is prepared based on the client's verified Risk Appetite profile in compliance with regulatory suitability standards. Mutual fund investments are subject to market risks. Please read all scheme-related documents carefully before investing.",
-                        disclaimerFont);
-                disclaimer.setSpacingBefore(20);
-                document.add(disclaimer);
-
-                document.close();
+                totalAllocated = totalAllocated.add(item.getAmount());
             }
 
-            return "/java-wtc-api/v1/documents/recommendations/" + filename;
+            // Total Row
+            PdfPCell totalLabel = new PdfPCell(new Phrase("Total Allocation", boldCellFont));
+            totalLabel.setColspan(4);
+            totalLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
+            totalLabel.setPadding(6);
+            totalLabel.setBackgroundColor(new Color(243, 244, 246));
+            table.addCell(totalLabel);
+
+            PdfPCell totalVal = new PdfPCell(new Phrase(currencyFormat.format(totalAllocated).replace("₹", "INR "), boldCellFont));
+            totalVal.setColspan(2);
+            totalVal.setPadding(6);
+            totalVal.setBackgroundColor(new Color(243, 244, 246));
+            table.addCell(totalVal);
+
+            document.add(table);
+
+            // 5. Statutory Disclaimer
+            Paragraph disclaimer = new Paragraph(
+                    "Disclaimer: This investment proposal is prepared based on the client's verified Risk Appetite profile in compliance with regulatory suitability standards. Mutual fund investments are subject to market risks. Please read all scheme-related documents carefully before investing.",
+                    disclaimerFont);
+            disclaimer.setSpacingBefore(20);
+            document.add(disclaimer);
+
+            document.close();
+
+            byte[] pdfBytes = out.toByteArray();
+            String s3Key = "recommendations/" + recommendation.getId() + "/recommendation_" + recommendation.getId() + ".pdf";
+            s3Service.uploadFile(s3Key, pdfBytes, "application/pdf");
+            String presignedUrl = s3Service.generatePresignedGetUrl(s3Key);
+            log.info("Successfully generated in-memory PDF and uploaded to S3: {}", s3Key);
+
+            // Clean up any legacy file on disk if one existed previously
+            cleanUpLegacyLocalFile(recommendation.getId());
+
+            return new GeneratedPdfResult(s3Key, presignedUrl);
 
         } catch (Exception e) {
+            log.error("Error generating recommendation PDF for recommendation ID {}", recommendation.getId(), e);
             throw new RuntimeException("Error rendering recommendation PDF", e);
+        }
+    }
+
+    private void cleanUpLegacyLocalFile(Long recommendationId) {
+        try {
+            Path legacyPath = Paths.get("uploads/recommendations").resolve("recommendation_" + recommendationId + ".pdf");
+            if (Files.exists(legacyPath)) {
+                Files.deleteIfExists(legacyPath);
+                log.info("Deleted legacy local PDF file: {}", legacyPath);
+            }
+        } catch (Exception e) {
+            log.debug("No legacy local file found or error deleting: {}", e.getMessage());
         }
     }
 

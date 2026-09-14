@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.wealthtech.crm.modules.portfolioreview.dto.CreateRecommendationRequest;
 import com.wealthtech.crm.modules.portfolioreview.dto.EligibleFundResponse;
 import com.wealthtech.crm.modules.portfolioreview.dto.FlowTypeResponse;
+import com.wealthtech.crm.modules.portfolioreview.dto.GeneratedPdfResult;
 import com.wealthtech.crm.modules.portfolioreview.dto.PortfolioEntryResponse;
 import com.wealthtech.crm.modules.portfolioreview.dto.PortfolioRecommendationResponse;
 import com.wealthtech.crm.modules.portfolioreview.dto.PortfolioReviewResponse;
@@ -316,10 +317,11 @@ public class PortfolioReviewService {
                 return;
             }
 
-            String documentUrl = pdfGeneratorService.generateRecommendationPdf(rec);
+            GeneratedPdfResult result = pdfGeneratorService.generateRecommendationPdf(rec);
 
             rec.setStatus(RecommendationStatus.PDF_GENERATED);
-            rec.setGeneratedDocumentUrl(documentUrl);
+            rec.setGeneratedDocumentUrl(result.presignedUrl());
+            rec.setDocumentS3Key(result.s3Key());
             recommendationRepo.save(rec);
 
         } catch (Exception ex) {
@@ -398,6 +400,15 @@ public class PortfolioReviewService {
     }
 
     private PortfolioRecommendationResponse mapToRecommendationResponse(PortfolioRecommendation pr) {
+        String docUrl = pr.getGeneratedDocumentUrl();
+        if (pr.getDocumentS3Key() != null && !pr.getDocumentS3Key().isBlank()) {
+            try {
+                docUrl = s3Service.generatePresignedGetUrl(pr.getDocumentS3Key());
+            } catch (Exception e) {
+                log.warn("Failed to generate presigned URL for documentS3Key {}: {}", pr.getDocumentS3Key(), e.getMessage());
+            }
+        }
+
         List<RfItemResponse> funds = pr.getFunds().stream()
                 .map(item -> new RfItemResponse(
                     item.getId(),
@@ -415,7 +426,8 @@ public class PortfolioReviewService {
             pr.getFlowType() != null ? pr.getFlowType().name() : null,
             pr.getStatus() != null ? pr.getStatus().name() : null,
             pr.getInvestorCategory() != null ? pr.getInvestorCategory().getCode() : null,
-            pr.getGeneratedDocumentUrl(),
+            docUrl,
+            pr.getDocumentS3Key(),
             funds,
             pr.getCreatedAt()
         );
