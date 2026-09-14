@@ -8,6 +8,7 @@ import { UserManager } from '@/modules/user-manager/UserManager';
 import { ClientManager } from '@/modules/client-manager/ClientManager';
 import { RiskAppetite } from '@/modules/risk-appetite/RiskAppetite';
 import { PortfolioReviews } from '@/modules/portfolio-reviews/PortfolioReviews';
+import { Login } from '@/modules/auth/Login';
 
 export interface RouteConfig {
   path: string;
@@ -18,7 +19,12 @@ export interface RouteConfig {
 }
 
 export const APP_ROUTES: readonly RouteConfig[] = [
-  // Public Fallback Routes
+  // Public Routes
+  {
+    path: '/login',
+    element: <Login />,
+    isPublic: true,
+  },
   {
     path: '/unauthorized',
     element: <Unauthorized />,

@@ -11,12 +11,15 @@ export interface UserSummary {
 }
 
 export interface AuthResponse {
-  access_token: string;
+  accessToken?: string;
+  access_token?: string;
+  tokenType?: string;
   token_type?: string;
   message?: string;
-  user: UserSummary;
+  email?: string;
+  user?: UserSummary;
   role?: string;
-  permissions: PermissionCode[];
+  permissions?: PermissionCode[];
 }
 
 export interface LoginPayload {

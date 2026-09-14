@@ -1,0 +1,140 @@
+@use '@/styles/variables' as *;
+@use '@/styles/mixins' as *;
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: $neutral-50;
+  padding: $spacing-4;
+
+  &__card {
+    width: 100%;
+    max-width: 44rem;
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-lg;
+    padding: $spacing-8;
+    box-shadow: $shadow-md;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-6;
+  }
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: $spacing-2;
+  }
+
+  &__brand-icon {
+    width: 4.8rem;
+    height: 4.8rem;
+    border-radius: $border-radius-md;
+    background-color: $primary-light;
+    color: $primary;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: $spacing-1;
+  }
+
+  &__title {
+    font-size: $font-size-2xl;
+    font-weight: 700;
+    color: $neutral-900;
+    margin: 0;
+  }
+
+  &__subtitle {
+    font-size: $font-size-sm;
+    color: $neutral-500;
+    margin: 0;
+  }
+
+  &__backend-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $spacing-2;
+    padding: $spacing-3;
+    background-color: $neutral-50;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius;
+  }
+
+  &__backend-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  &__backend-title {
+    font-size: $font-size-xs;
+    font-weight: 600;
+    color: $neutral-600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__endpoint-hint {
+    font-size: 1.1rem;
+    color: $neutral-500;
+    font-family: monospace;
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-4;
+  }
+
+  &__actions {
+    margin-top: $spacing-2;
+  }
+
+  &__demo-section {
+    border-top: 1px dashed $neutral-200;
+    padding-top: $spacing-4;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-2;
+  }
+
+  &__demo-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: $neutral-500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: center;
+  }
+
+  &__demo-buttons {
+    display: flex;
+    gap: $spacing-2;
+  }
+
+  &__demo-btn {
+    flex: 1;
+    appearance: none;
+    background-color: $neutral-100;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-sm;
+    padding: $spacing-2;
+    font-size: $font-size-xs;
+    font-weight: 500;
+    color: $neutral-700;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+
+    &:hover {
+      background-color: $neutral-200;
+      color: $neutral-900;
+    }
+  }
+}
