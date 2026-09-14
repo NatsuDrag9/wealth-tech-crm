@@ -43,3 +43,25 @@ export async function testDisabledInput({ canvasElement }: PlayContext): Promise
   await userEvent.type(input, 'Ignored text');
   await expect(input).toHaveValue('');
 }
+
+export async function testPasswordVisibilityToggle({
+  canvasElement,
+}: PlayContext): Promise<void> {
+  const canvas = within(canvasElement);
+  const input = canvasElement.querySelector('input') as HTMLInputElement;
+  await expect(input).toBeInTheDocument();
+  await expect(input.type).toBe('password');
+
+  await userEvent.type(input, 'SuperSecret123!');
+  await expect(input).toHaveValue('SuperSecret123!');
+
+  const toggleBtn = canvas.getByRole('button', { name: /show password/i });
+  await expect(toggleBtn).toBeInTheDocument();
+
+  await userEvent.click(toggleBtn);
+  await expect(input.type).toBe('text');
+  await expect(canvas.getByRole('button', { name: /hide password/i })).toBeInTheDocument();
+
+  await userEvent.click(canvas.getByRole('button', { name: /hide password/i }));
+  await expect(input.type).toBe('password');
+}

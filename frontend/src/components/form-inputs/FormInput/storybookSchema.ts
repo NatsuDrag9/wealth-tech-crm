@@ -5,6 +5,7 @@ export interface FormValues {
   phone: string;
   fullName: string;
   aum: string;
+  password: string;
 }
 
 export const validationSchema = yup.object({
@@ -12,4 +13,5 @@ export const validationSchema = yup.object({
   phone: yup.string().required('Phone is required'),
   fullName: yup.string().required('Full name is required'),
   aum: yup.string().required('AUM is required'),
+  password: yup.string().required('Password is required'),
 });

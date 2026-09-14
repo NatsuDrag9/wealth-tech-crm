@@ -8,10 +8,11 @@ import {
   testInputTyping,
   testErrorAppearsOnBlurAndClearsOnTyping,
   testDisabledInput,
+  testPasswordVisibilityToggle,
 } from './playFunctions';
 
 interface StoryProps {
-  name: 'email' | 'phone' | 'fullName' | 'aum';
+  name: 'email' | 'phone' | 'fullName' | 'aum' | 'password';
   label: string;
   type?: FormInputType;
   placeholder?: string;
@@ -32,6 +33,7 @@ function FormInputStoryWrapper({
       phone: '',
       fullName: '',
       aum: '',
+      password: '',
     },
     mode: 'onBlur',
   });
@@ -117,4 +119,14 @@ export const Disabled: Story = {
     disabled: true,
   },
   play: testDisabledInput,
+};
+
+export const Password: Story = {
+  args: {
+    name: 'password',
+    label: 'Account Password',
+    type: 'password',
+    placeholder: 'Enter secure password',
+  },
+  play: testPasswordVisibilityToggle,
 };

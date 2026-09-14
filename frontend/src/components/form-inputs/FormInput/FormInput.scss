@@ -15,6 +15,13 @@
     user-select: none;
   }
 
+  &__control-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
   &__control {
     width: 100%;
     height: 3.8rem;
@@ -26,6 +33,10 @@
     border: 1px solid $neutral-300;
     border-radius: $border-radius;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+    &--password {
+      padding-right: $spacing-8;
+    }
 
     &::placeholder {
       color: $neutral-400;
@@ -66,6 +77,35 @@
         appearance: none;
         margin: 0;
       }
+    }
+  }
+
+  &__toggle-password-btn {
+    position: absolute;
+    right: $spacing-2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: $neutral-500;
+    padding: $spacing-1;
+    border-radius: $border-radius-sm;
+    transition: color 0.15s ease-in-out;
+
+    &:hover:not(:disabled) {
+      color: $neutral-800;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 1px;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
     }
   }
 
