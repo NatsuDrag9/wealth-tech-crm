@@ -60,6 +60,14 @@ const PERMISSIONS_DATA = [
   { codename: 'role:update', name: 'Update Role', contentType: 'role' },
   { codename: 'role:delete', name: 'Delete Role', contentType: 'role' },
 
+  // Eligible Funds (Master Funds Management)
+  { codename: 'eligiblefund:read', name: 'View Eligible Fund', contentType: 'eligiblefund' },
+  { codename: 'eligiblefund:create', name: 'Create Eligible Fund', contentType: 'eligiblefund' },
+  { codename: 'eligiblefund:update', name: 'Update Eligible Fund', contentType: 'eligiblefund' },
+  { codename: 'eligiblefund:delete', name: 'Delete Eligible Fund', contentType: 'eligiblefund' },
+  { codename: 'eligiblefund:upload', name: 'Upload Master Eligible Funds', contentType: 'eligiblefund' },
+
+  // Role Permissions
   { codename: 'rolepermission:read', name: 'View Role Permission', contentType: 'rolepermission' },
   { codename: 'rolepermission:create', name: 'Create Role Permission', contentType: 'rolepermission' },
   { codename: 'rolepermission:update', name: 'Update Role Permission', contentType: 'rolepermission' },
@@ -68,13 +76,10 @@ const PERMISSIONS_DATA = [
 
 export const seedPermissions = async (): Promise<void> => {
   try {
-    const count = await Permission.countDocuments();
-    if (count > 0) {
-      return;
+    for (const p of PERMISSIONS_DATA) {
+      await Permission.updateOne({ codename: p.codename }, { $set: p }, { upsert: true });
     }
-
-    await Permission.insertMany(PERMISSIONS_DATA);
-    logger.info({ count: PERMISSIONS_DATA.length }, 'Permissions catalogue seeded successfully');
+    logger.info({ count: PERMISSIONS_DATA.length }, 'Permissions catalogue synced successfully');
   } catch (error: unknown) {
     const err = error instanceof Error ? error.message : String(error);
     logger.error({ error: err }, 'Failed to seed permissions catalogue');

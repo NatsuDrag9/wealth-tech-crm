@@ -3,18 +3,22 @@ import { config } from './config/environment';
 import { connectDatabase } from './config/db';
 import { logger } from './common/utils/logger';
 import { seedPermissions } from './modules/usermanager/seeders/permissionSeeder';
+import { seedAdmin } from './modules/usermanager/seeders/adminSeeder';
 import { seedRiskQuestions } from './modules/riskappetite/seeders/riskQuestionSeeder';
 import { seedEligibleFunds } from './modules/portfolioreview/seeders/eligibleFundSeeder';
+import { s3Service } from './common/services/s3Service';
 
 const startServer = async (): Promise<void> => {
   try {
     // 1. Establish MongoDB Connection
     await connectDatabase();
 
-    // 2. Execute Idempotent Database Seeders
+    // 2. Execute Idempotent Database Seeders & Cloud Infrastructure Verification
     await seedPermissions();
+    await seedAdmin();
     await seedRiskQuestions();
     await seedEligibleFunds();
+    await s3Service.ensureBucketExists();
 
     // 3. Start HTTP Server
     const server = app.listen(config.port, () => {
