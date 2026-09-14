@@ -35,9 +35,11 @@ import com.wealthtech.crm.modules.riskappetite.entity.RiskAssessment;
 import com.wealthtech.crm.modules.riskappetite.enums.AssessmentStatus;
 import com.wealthtech.crm.modules.riskappetite.enums.ScoreCategory;
 import com.wealthtech.crm.modules.riskappetite.repository.RaRepository;
+import com.wealthtech.crm.infrastructure.s3.S3Service;
 import com.wealthtech.crm.modules.usermanager.exception.NotFoundException;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 // GET EligibleFunds
 // GET FlowTypes
@@ -51,6 +53,7 @@ import lombok.RequiredArgsConstructor;
 // GET getRecommendationsByClient(Long clientId)
 // POST generatePdf(Long id)
 
+@Slf4j
 @Service 
 @RequiredArgsConstructor
 public class PortfolioReviewService {
@@ -61,6 +64,7 @@ public class PortfolioReviewService {
     private final RecommendationFundItemRepository fundItemRepository;
     private final RaRepository raRepo;
     private final PortfolioPdfGeneratorService pdfGeneratorService;
+    private final S3Service s3Service;
 
     // ==========================================
     // 1. MASTER FUND UNIVERSE & UTILITIES

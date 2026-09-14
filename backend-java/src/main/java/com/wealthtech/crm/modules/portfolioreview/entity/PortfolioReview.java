@@ -48,6 +48,9 @@ public class PortfolioReview {
     @Column(name = "note")
     private String note;
 
+    @Column(name = "ecas_file_key")
+    private String ecasFileKey;
+
     @OneToMany(mappedBy = "portfolioReview", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<PortfolioEntry> entries = new ArrayList<>();

@@ -32,12 +32,15 @@ import com.wealthtech.crm.modules.customer.service.ClientExcelService;
 import com.wealthtech.crm.modules.customer.service.ClientService;
 import com.wealthtech.crm.modules.usermanager.dto.CursorPaginatedResponse;
 import com.wealthtech.crm.modules.usermanager.entity.User;
+import com.wealthtech.crm.infrastructure.s3.S3Service;
 import com.wealthtech.crm.modules.usermanager.exception.BadRequestException;
 import com.wealthtech.crm.modules.usermanager.repository.UserRepository;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
 @RequestMapping("/java-wtc-api/v1/clients")
 @RequiredArgsConstructor
@@ -46,6 +49,7 @@ public class ClientController {
     private final ClientService clientService;
     private final ClientExcelService excelService;
     private final UserRepository userRepository;
+    private final S3Service s3Service;
 
     // List clients with cursor pagination & search/status/RM filtering
     @GetMapping
@@ -163,16 +167,32 @@ public class ClientController {
         }
 
         Long currentUserId = resolveCurrentUserId(authentication);
+        byte[] fileBytes;
         try {
-            clientService.processBulkUploadAsync(file.getBytes(), currentUserId);
+            fileBytes = file.getBytes();
         } catch (IOException e) {
             throw new BadRequestException("Failed to read uploaded file contents");
         }
 
+        String safeFilename = filename.replaceAll("[^a-zA-Z0-9._-]", "_");
+        String s3Key = "client-uploads/" + System.currentTimeMillis() + "_" + safeFilename;
+        String presignedUrl = null;
+
+        try {
+            s3Service.uploadFile(s3Key, fileBytes, file.getContentType());
+            presignedUrl = s3Service.generatePresignedGetUrl(s3Key);
+        } catch (Exception e) {
+            log.warn("S3 upload for client bulk upload failed: {}. Proceeding with async database ingestion.", e.getMessage());
+        }
+
+        clientService.processBulkUploadAsync(fileBytes, currentUserId);
+
         BulkUploadResponse response = new BulkUploadResponse(
                 "PROCESSING",
                 "Bulk client upload is being processed in background",
-                filename
+                filename,
+                s3Key,
+                presignedUrl
         );
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }

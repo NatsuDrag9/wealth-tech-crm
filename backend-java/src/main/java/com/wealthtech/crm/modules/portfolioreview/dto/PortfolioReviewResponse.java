@@ -17,5 +17,14 @@ public record PortfolioReviewResponse(
     Double cagr,
     String note,
     List<PortfolioEntryResponse> entries,
+    @JsonProperty("ecas_file_url") String ecasFileUrl,
     @JsonProperty("created_at") LocalDateTime createdAt
-) {}
+) {
+    public PortfolioReviewResponse(
+            Long id, Long clientId, String status, BigDecimal totalInvested,
+            BigDecimal totalCurrentValue, BigDecimal totalGain, Double gainPercentage,
+            Double cagr, String note, List<PortfolioEntryResponse> entries, LocalDateTime createdAt
+    ) {
+        this(id, clientId, status, totalInvested, totalCurrentValue, totalGain, gainPercentage, cagr, note, entries, null, createdAt);
+    }
+}

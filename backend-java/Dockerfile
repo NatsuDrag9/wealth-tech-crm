@@ -22,13 +22,7 @@ RUN ./mvnw clean package -DskipTests -B
 
 ## Stage 2: Production JRE 17 Runtime
 FROM eclipse-temurin:17-jre-alpine AS runner
-Read(~/Desktop/Rohit/Personal/Online_Project_Uploads/...odules/customer/controller/ClientController.java)
-● Read(~/Desktop/Rohit/Personal/Online_Project_Uploads/...odules/customer/controller/ClientController.java)
-● Read(~/Desktop/Rohit/Personal/Online_Project_Uploads/.../crm/modules/auth/controller/AuthController.java)
-● Read(~/Desktop/Rohit/Personal/Online_Project_Uploads/.../crm/modules/auth/controller/AuthController.java)
-● Find(Find SecurityConfig in backend-java)
-● Read(~/Desktop/Rohit/Personal/Online_Project...thtech/crm/security/SecurityConfig.java) (ctrl+o to expand)
-⢿  Reading file...
+
 WORKDIR /app
 
 # Security best practice: Create a non-root group and user
