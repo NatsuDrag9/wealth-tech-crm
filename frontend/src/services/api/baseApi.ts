@@ -7,34 +7,40 @@ import {
 } from '@reduxjs/toolkit/query/react';
 import { setCredentials, logout } from '@/store/slices/authSlice';
 import { logWarn, logError } from '@/utils/logUtils';
-import { AuthResponse } from '@/definitions/authTypes';
+import { AuthResponse, UserSummary } from '@/definitions/authTypes';
 import { ENDPOINTS } from '@/constants/endpoints';
+
+import { getActiveBaseUrl } from '@/config/backendConfig';
 
 interface AuthSliceState {
   auth: {
     accessToken: string | null;
+    user?: UserSummary | null;
   };
 }
 
-const rawBaseQuery = fetchBaseQuery({
-  baseUrl: import.meta.env.VITE_BASE_URL || '/api/v1',
-  credentials: 'include',
-  prepareHeaders: (headers, { getState }) => {
-    const token = (getState() as AuthSliceState).auth?.accessToken;
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-    return headers;
-  },
-});
+function getRawBaseQuery() {
+  return fetchBaseQuery({
+    baseUrl: getActiveBaseUrl(),
+    credentials: 'include',
+    prepareHeaders: (headers, { getState }) => {
+      const token = (getState() as AuthSliceState).auth?.accessToken;
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+      return headers;
+    },
+  });
+}
 
 let refreshPromise: Promise<boolean> | null = null;
 
-const baseQueryWithReauth: BaseQueryFn<
-string | FetchArgs,
-unknown,
-FetchBaseQueryError
-> = async (args, api, extraOptions) => {
+const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+  args,
+  api,
+  extraOptions,
+) => {
+  const rawBaseQuery = getRawBaseQuery();
   let result = await rawBaseQuery(args, api, extraOptions);
 
   if (result.error && result.error.status === 401) {
@@ -57,11 +63,18 @@ FetchBaseQueryError
 
           if (refreshResult.data) {
             const data = refreshResult.data as AuthResponse;
+            const token = data.accessToken || data.access_token || '';
+            const existingUser = (api.getState() as AuthSliceState).auth?.user;
+            const user = data.user || existingUser || {
+              id: data.email || '1',
+              email: data.email || '',
+              role: data.role,
+            };
             api.dispatch(
               setCredentials({
-                user: data.user,
-                accessToken: data.access_token,
-                permissions: data.permissions,
+                user,
+                accessToken: token,
+                permissions: data.permissions || [],
               }),
             );
             return true;

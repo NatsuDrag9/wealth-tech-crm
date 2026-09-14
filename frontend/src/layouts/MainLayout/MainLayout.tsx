@@ -12,6 +12,7 @@ import { useAppSelector, useAppDispatch } from '@/store';
 import { logout } from '@/store/slices/authSlice';
 import { usePermission } from '@/hooks/usePermission';
 import { NAV_ITEMS, NavItemConfig } from '@/constants/navConstants';
+import { BackendToggleSwitch } from '@/components/generics';
 import './MainLayout.scss';
 
 function renderNavIcon(iconName: NavItemConfig['iconName']): React.ReactElement {
@@ -63,6 +64,8 @@ export function MainLayout(): React.ReactElement {
         </div>
 
         <div className="main-layout__user-panel">
+          <BackendToggleSwitch variant="compact" />
+
           <div className="main-layout__user-info">
             <span className="user-name">
               {auth.user?.full_name || auth.user?.email || 'Guest User'}
