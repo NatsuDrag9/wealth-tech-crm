@@ -24,9 +24,9 @@
     - `AuthResponse`: Record returning `accessToken`, `tokenType`, `message`, user profile metadata (`email`), `role`, and `permissions` set.
     - `AuthService`: Handles `login()` (generates 15-min access token + sets 7-day `refreshToken` HttpOnly cookie directly on `HttpServletResponse`), `refreshAccessToken()`, and `logout()`.
     - `AuthController`:
-        - `POST /api/v1/auth/login`: Accepts `@Valid @RequestBody LoginDto`, delegates cookie handling to `AuthService`, and returns `AuthResponse` in JSON body.
-        - `POST /api/v1/auth/refresh`: Reads `@CookieValue(name = "refreshToken")` and issues a fresh `accessToken`.
-        - `POST /api/v1/auth/logout`: Clears the `refreshToken` cookie via `AuthService`.
+        - `POST /java-wtc-api/v1/auth/login`: Accepts `@Valid @RequestBody LoginDto`, delegates cookie handling to `AuthService`, and returns `AuthResponse` in JSON body.
+        - `POST /java-wtc-api/v1/auth/refresh`: Reads `@CookieValue(name = "refreshToken")` and issues a fresh `accessToken`.
+        - `POST /java-wtc-api/v1/auth/logout`: Clears the `refreshToken` cookie via `AuthService`.
 
 
 #### User Management
@@ -61,9 +61,9 @@
    - Save role with empty `permissions` initially; permissions are assigned later via `set-permissions` endpoint.
 
 8. Dropdown APIs for cascading form behavior:
-   - `GET /api/v1/groups/dropdown` → all groups as `DropdownOption<Long>`
-   - `GET /api/v1/roles/dropdown?groupId=` → roles in the specified group, or `[]` if `groupId` is missing
-   - `GET /api/v1/users/dropdown?groupId=&excludeUserId=` → users in the specified group, excluding the current user when editing; returns `[]` if `groupId` is missing
+   - `GET /java-wtc-api/v1/groups/dropdown` → all groups as `DropdownOption<Long>`
+   - `GET /java-wtc-api/v1/roles/dropdown?groupId=` → roles in the specified group, or `[]` if `groupId` is missing
+   - `GET /java-wtc-api/v1/users/dropdown?groupId=&excludeUserId=` → users in the specified group, excluding the current user when editing; returns `[]` if `groupId` is missing
    - The Add/Edit User form uses these to enforce: Department must be selected before Role or Reports-To options become available.
 
 9. Permissions:

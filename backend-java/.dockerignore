@@ -1,0 +1,22 @@
+# Build output from host builds (Crucial! Avoids polluting container with host artifacts)             
+    target/                                                                                               
+                                                                                                          
+    # IDE and Editor configurations                                                                       
+    .idea/                                                                                                
+    *.iml                                                                                                 
+    .vscode/                                                                                              
+    .classpath                                                                                            
+    .project                                                                                              
+    .settings/                                                                                            
+                                                                                                          
+    # Git and Version Control                                                                             
+    .git/                                                                                                 
+    .gitignore                                                                                            
+    .gitattributes                                                                                        
+                                                                                                          
+    # OS-generated files                                                                                  
+    .DS_Store                                                                                             
+    Thumbs.db                                                                                             
+                                                                                                          
+    # Log and temporary files                                                                             
+    *.log                                                                                                 

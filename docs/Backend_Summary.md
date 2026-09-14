@@ -8,7 +8,7 @@ This document provides a comprehensive architectural and operational comparison 
 
 | Architectural Concern | Java Spring Boot (`backend-java`) | Node.js + Express (`backend-nodejs`) | Frontend Wire Contract |
 | :--- | :--- | :--- | :--- |
-| **Default Base Route** | `/api/v1` | `/api/v1` *(or configurable `API_PREFIX`)* | `VITE_BASE_URL` env variable |
+| **Default Base Route** | `/java-wtc-api/v1` | `/nodejs-wtc-api/v1` *(or configurable `API_PREFIX`)* | `VITE_BASE_URL` env variable |
 | **JSON Casing** | `snake_case` (Jackson naming strategy) | `snake_case` (`snakeCaseResponse` interceptor) | All request/response keys are `snake_case` |
 | **JWT Architecture** | **Slim JWT**: Subject = user `email`, 15-min expiration | **Slim JWT**: Subject = user `email`, 15-min expiration | Short-lived `accessToken` held strictly in-memory (Redux) |
 | **Session Persistence** | 7-day `refreshToken` in `HttpOnly`, `SameSite` cookie | 7-day `refreshToken` in `HttpOnly`, `SameSite` cookie | Sent automatically by browser with `credentials: 'include'` |

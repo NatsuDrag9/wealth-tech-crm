@@ -31,6 +31,6 @@ public class OpenApiConfig {
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
                                 .bearerFormat("JWT")
-                                .description("Paste your JWT Bearer token obtained from POST /api/v1/auth/login")));
+                                .description("Paste your JWT Bearer token obtained from POST /java-wtc-api/v1/auth/login")));
     }
 }

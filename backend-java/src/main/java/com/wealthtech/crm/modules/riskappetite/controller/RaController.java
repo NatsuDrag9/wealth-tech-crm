@@ -26,7 +26,7 @@ import lombok.RequiredArgsConstructor;
 // Get results of a particular risk-assessment - raId
 
 @RestController 
-@RequestMapping("/api/v1")
+@RequestMapping("/java-wtc-api/v1")
 @RequiredArgsConstructor
 public class RaController {
     private final RaService raService;

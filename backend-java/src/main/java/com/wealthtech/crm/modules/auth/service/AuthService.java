@@ -48,7 +48,7 @@ public class AuthService {
         ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
                 .httpOnly(true)            // XSS Protection
                 .secure(false)             // Set to true in production (HTTPS)
-                .path("/api/v1/auth")      // Cookie scoped to auth routes
+                .path("/java-wtc-api/v1/auth")      // Cookie scoped to auth routes
                 .maxAge(7 * 24 * 60 * 60)  // 7 days
                 .sameSite("Strict")        // CSRF Protection
                 .build();
@@ -110,7 +110,7 @@ public class AuthService {
     public void logout(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
                 .httpOnly(true)
-                .path("/api/v1/auth")
+                .path("/java-wtc-api/v1/auth")
                 .maxAge(0) // Clear cookie
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());

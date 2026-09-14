@@ -134,7 +134,7 @@ public class PortfolioPdfGeneratorService {
                 document.close();
             }
 
-            return "/api/v1/documents/recommendations/" + filename;
+            return "/java-wtc-api/v1/documents/recommendations/" + filename;
 
         } catch (Exception e) {
             throw new RuntimeException("Error rendering recommendation PDF", e);

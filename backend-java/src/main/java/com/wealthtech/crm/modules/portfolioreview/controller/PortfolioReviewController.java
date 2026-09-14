@@ -19,7 +19,7 @@ import com.wealthtech.crm.modules.portfolioreview.service.PortfolioReviewService
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/java-wtc-api/v1")
 @RequiredArgsConstructor
 public class PortfolioReviewController {
 

@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/groups")
+@RequestMapping("/java-wtc-api/v1/groups")
 public class GroupController {
     private final GroupService groupService;
     private final UserRepository userRepository;
