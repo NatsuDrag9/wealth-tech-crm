@@ -103,9 +103,27 @@ export const bulkReassignRm = asyncHandler(async (req: Request, res: Response) =
   return res.status(200).json(result);
 });
 
-// 9. GET /clients/bulk-template - Download Excel template
-export const downloadBulkTemplate = asyncHandler(async (_req: Request, res: Response) => {
+// 9. GET /clients/bulk-template - Download Excel template (persisted to S3)
+export const downloadBulkTemplate = asyncHandler(async (req: Request, res: Response) => {
+  const format = typeof req.query.format === 'string' ? req.query.format : undefined;
   const excelBuffer = await clientExcelService.generateClientBulkTemplate();
+  const s3Key = 'templates/clients_bulk_template.xlsx';
+
+  try {
+    await s3Service.uploadFile({
+      key: s3Key,
+      buffer: excelBuffer,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  } catch (s3Err: unknown) {
+    const msg = s3Err instanceof Error ? s3Err.message : String(s3Err);
+    logger.warn({ error: msg, s3Key }, 'Failed to sync client bulk template to S3. Serving buffer directly.');
+  }
+
+  if (format === 'url') {
+    const fileUrl = await s3Service.getPresignedDownloadUrl(s3Key);
+    return res.status(200).json({ s3Key, fileUrl });
+  }
 
   res.setHeader('Content-Disposition', 'attachment; filename="clients_bulk_template.xlsx"');
   res.setHeader(

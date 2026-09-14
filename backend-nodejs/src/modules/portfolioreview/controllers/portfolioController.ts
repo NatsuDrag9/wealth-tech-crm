@@ -6,6 +6,7 @@ import { AppError } from '../../../common/utils/AppError';
 import { logger } from '../../../common/utils/logger';
 import { portfolioReviewService } from '../services/portfolioReviewService';
 import { eligibleFundExcelService } from '../services/eligibleFundExcelService';
+import { s3Service } from '../../../common/services/s3Service';
 import { RecommendationFlowType } from '../enums/portfolioEnums';
 
 // Eligible Funds
@@ -189,9 +190,27 @@ export const uploadMasterFunds = asyncHandler(async (req: Request, res: Response
   return res.status(200).json(result);
 });
 
-// GET /admin/master-funds/template and GET /eligible-funds/template
-export const downloadMasterFundsTemplate = asyncHandler(async (_req: Request, res: Response) => {
+// GET /admin/master-funds/template and GET /eligible-funds/template (persisted to S3)
+export const downloadMasterFundsTemplate = asyncHandler(async (req: Request, res: Response) => {
+  const format = typeof req.query.format === 'string' ? req.query.format : undefined;
   const templateBuffer = await eligibleFundExcelService.generateTemplate();
+  const s3Key = 'templates/master_funds_template.xlsx';
+
+  try {
+    await s3Service.uploadFile({
+      key: s3Key,
+      buffer: templateBuffer,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  } catch (s3Err: unknown) {
+    const msg = s3Err instanceof Error ? s3Err.message : String(s3Err);
+    logger.warn({ error: msg, s3Key }, 'Failed to sync master funds template to S3. Serving buffer directly.');
+  }
+
+  if (format === 'url') {
+    const fileUrl = await s3Service.getPresignedDownloadUrl(s3Key);
+    return res.status(200).json({ s3Key, fileUrl });
+  }
 
   res.setHeader(
     'Content-Type',
