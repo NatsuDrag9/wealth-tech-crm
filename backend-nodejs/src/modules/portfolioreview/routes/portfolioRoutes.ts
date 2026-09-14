@@ -17,6 +17,7 @@ import {
   downloadMasterFundsTemplate,
   uploadEcasStatement,
   getEcasDownloadUrl,
+  getRecommendationDownloadUrl,
 } from '../controllers/portfolioController';
 
 const router = Router();
@@ -125,6 +126,12 @@ router.post(
   '/portfolio-recommendations/:id/generate-pdf',
   requirePermission('portfolioreview:update'),
   triggerPdfGeneration
+);
+
+router.get(
+  '/portfolio-recommendations/:id/download-url',
+  requirePermission('portfolioreview:read'),
+  getRecommendationDownloadUrl
 );
 
 // 5. Document Streaming / Download

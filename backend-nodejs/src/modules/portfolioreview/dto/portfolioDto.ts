@@ -102,6 +102,7 @@ export interface PortfolioRecommendationResponseDto {
     status: RecommendationStatus;
     investorCategory?: string | null;
     generatedDocumentUrl?: string | null;
+    documentS3Key?: string | null;
     funds: RfItemResponseDto[];
     createdAt: Date;
 }

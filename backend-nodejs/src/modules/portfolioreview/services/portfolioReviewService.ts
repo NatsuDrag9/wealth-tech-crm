@@ -73,8 +73,22 @@ export class PortfolioReviewService {
         };
     }
 
-    private mapToRecommendationResponse(pr: IPortfolioRecommendation):
-        PortfolioRecommendationResponseDto {
+    private async mapToRecommendationResponse(
+        pr: IPortfolioRecommendation
+    ): Promise<PortfolioRecommendationResponseDto> {
+        let generatedDocumentUrl = pr.generatedDocumentUrl || null;
+        if (pr.documentS3Key) {
+            try {
+                generatedDocumentUrl = await s3Service.getPresignedDownloadUrl(pr.documentS3Key);
+            } catch (s3Err: unknown) {
+                const msg = s3Err instanceof Error ? s3Err.message : String(s3Err);
+                logger.warn(
+                    { error: msg, documentS3Key: pr.documentS3Key },
+                    'Failed to refresh presigned URL for recommendation PDF'
+                );
+            }
+        }
+
         const funds: RfItemResponseDto[] = pr.funds.map((item, index) => {
             const fund = item.eligibleFund as IEligibleFund;
             return {
@@ -93,7 +107,8 @@ export class PortfolioReviewService {
             flowType: pr.flowType,
             status: pr.status,
             investorCategory: pr.investorCategory || null,
-            generatedDocumentUrl: pr.generatedDocumentUrl || null,
+            generatedDocumentUrl,
+            documentS3Key: pr.documentS3Key || null,
             funds,
             createdAt: pr.createdAt,
         };
@@ -381,7 +396,7 @@ export class PortfolioReviewService {
         const populated = await PortfolioRecommendation.findById(recommendation._id).populate('funds.eligibleFund');
 
         logger.info({ recommendationId: recommendation._id, clientId: request.clientId }, 'Recommendation created');
-        return this.mapToRecommendationResponse(populated || recommendation);
+        return await this.mapToRecommendationResponse(populated || recommendation);
     }
 
     async getRecommendation(id: string): Promise<PortfolioRecommendationResponseDto> {
@@ -390,7 +405,7 @@ export class PortfolioReviewService {
             logger.warn({ id }, 'Get recommendation failed: Not found');
             throw new AppError(`Portfolio recommendation not found with id: ${id}`, 404);
         }
-        return this.mapToRecommendationResponse(recommendation);
+        return await this.mapToRecommendationResponse(recommendation);
     }
 
     async getRecommendationsByClient(clientId: string): Promise<PortfolioRecommendationResponseDto[]> {
@@ -400,7 +415,7 @@ export class PortfolioReviewService {
             .populate('funds.eligibleFund')
             .sort({ createdAt: -1 });
 
-        return recommendations.map((rec) => this.mapToRecommendationResponse(rec));
+        return Promise.all(recommendations.map((rec) => this.mapToRecommendationResponse(rec)));
     }
 
     /**
@@ -420,7 +435,7 @@ export class PortfolioReviewService {
             recommendation.status === RecommendationStatus.PDF_GENERATED &&
             recommendation.generatedDocumentUrl
         ) {
-            return this.mapToRecommendationResponse(recommendation);
+            return await this.mapToRecommendationResponse(recommendation);
         }
 
         // Fire and forget non-blocking background PDF generation
@@ -428,11 +443,11 @@ export class PortfolioReviewService {
             logger.error({ err, recommendationId }, 'Background PDF generation encountered an error');
         });
 
-        return this.mapToRecommendationResponse(recommendation);
+        return await this.mapToRecommendationResponse(recommendation);
     }
 
     /**
-     * Non-blocking background worker for PDF compilation.
+     * Non-blocking background worker for PDF compilation and S3 upload.
      */
     async generatePdfAsync(recommendationId: string): Promise<void> {
         try {
@@ -443,19 +458,41 @@ export class PortfolioReviewService {
                 return;
             }
 
-            const documentUrl = await portfolioPdfService.generateRecommendationPdf(rec);
+            const { s3Key, presignedUrl } = await portfolioPdfService.generateRecommendationPdf(rec);
 
             rec.status = RecommendationStatus.PDF_GENERATED;
-            rec.generatedDocumentUrl = documentUrl;
+            rec.documentS3Key = s3Key;
+            rec.generatedDocumentUrl = presignedUrl;
             await rec.save();
 
-            logger.info({ recommendationId, documentUrl }, 'Background PDF compilation completed');
+            logger.info(
+                { recommendationId, s3Key },
+                'Background PDF compilation and S3 upload completed successfully'
+            );
         } catch (ex) {
             logger.error({ ex, recommendationId }, 'Background PDF compilation failed');
             await PortfolioRecommendation.findByIdAndUpdate(recommendationId, {
                 status: RecommendationStatus.PDF_FAILED,
             });
         }
+    }
+
+    /**
+     * Generates a fresh pre-signed download URL for a recommendation proposal PDF.
+     */
+    async getRecommendationDownloadUrl(recommendationId: string): Promise<string> {
+        const rec = await PortfolioRecommendation.findById(recommendationId);
+        if (!rec) {
+            logger.warn({ recommendationId }, 'Get recommendation download URL failed: Not found');
+            throw new AppError(`Portfolio recommendation not found with id: ${recommendationId}`, 404);
+        }
+
+        if (!rec.documentS3Key) {
+            logger.warn({ recommendationId }, 'Get recommendation download URL failed: Document not yet generated');
+            throw new AppError('No generated proposal document exists for this recommendation yet', 404);
+        }
+
+        return await s3Service.getPresignedDownloadUrl(rec.documentS3Key);
     }
 }
 

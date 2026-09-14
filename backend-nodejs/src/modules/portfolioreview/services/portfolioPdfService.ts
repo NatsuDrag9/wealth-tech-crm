@@ -1,37 +1,33 @@
-import fs from 'fs';
-import path from 'path';
 import PDFDocument from 'pdfkit';
 import { IPortfolioRecommendation } from '../models/PortfolioRecommendation';
 import { IEligibleFund } from '../models/EligibleFund';
 import { FLOW_TYPE_DISPLAY_NAMES } from '../enums/portfolioEnums';
 import { SCORE_CATEGORIES, ScoreCategoryCode } from '../../riskappetite/enums/riskEnums';
 import { logger } from '../../../common/utils/logger';
+import { s3Service } from '../../../common/services/s3Service';
+
+export interface GeneratedPdfResult {
+  s3Key: string;
+  presignedUrl: string;
+}
 
 export class PortfolioPdfService {
-  private readonly uploadDir = path.resolve(process.cwd(), 'uploads/recommendations');
-
-  constructor() {
-    if (!fs.existsSync(this.uploadDir)) {
-      fs.mkdirSync(this.uploadDir, { recursive: true });
-    }
-  }
-
   /**
-   * Compiles and streams a branded investment recommendation proposal PDF to disk.
-   * Returns the relative wire API path to download the generated file.
+   * Compiles a branded investment recommendation proposal PDF entirely in-memory
+   * and persists the resulting binary buffer directly to AWS S3 / LocalStack.
+   * Returns the S3 object key and a secure, time-limited pre-signed download URL.
    */
-  async generateRecommendationPdf(recommendation: IPortfolioRecommendation): Promise<string> {
-    const filename = `recommendation_${recommendation._id.toString()}.pdf`;
-    const filePath = path.join(this.uploadDir, filename);
-
+  async generateRecommendationPdf(
+    recommendation: IPortfolioRecommendation
+  ): Promise<GeneratedPdfResult> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
         margins: { top: 40, bottom: 40, left: 40, right: 40 },
       });
 
-      const writeStream = fs.createWriteStream(filePath);
-      doc.pipe(writeStream);
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
 
       // Currency Formatter (Indian Rupee)
       const currencyFormatter = new Intl.NumberFormat('en-IN', {
@@ -156,14 +152,40 @@ export class PortfolioPdfService {
 
       doc.end();
 
-      writeStream.on('finish', () => {
-        logger.info({ filename, filePath }, 'Recommendation PDF generated successfully');
-        const documentUrl = `/nodejs-wtc-api/v1/documents/recommendations/${filename}`;
-        resolve(documentUrl);
+      doc.on('end', async () => {
+        try {
+          const pdfBuffer = Buffer.concat(chunks);
+          const s3Key = `recommendations/${recommendation._id.toString()}/proposal_${Date.now()}.pdf`;
+
+          await s3Service.uploadFile({
+            key: s3Key,
+            buffer: pdfBuffer,
+            contentType: 'application/pdf',
+          });
+
+          const presignedUrl = await s3Service.getPresignedDownloadUrl(s3Key);
+
+          logger.info(
+            { s3Key, recommendationId: recommendation._id.toString() },
+            'Recommendation PDF generated entirely in-memory and uploaded directly to S3'
+          );
+
+          resolve({ s3Key, presignedUrl });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          logger.error(
+            { error: msg, recommendationId: recommendation._id.toString() },
+            'Failed to upload generated recommendation PDF to S3'
+          );
+          reject(error);
+        }
       });
 
-      writeStream.on('error', (err) => {
-        logger.error({ err, filePath }, 'Failed to write recommendation PDF file');
+      doc.on('error', (err) => {
+        logger.error(
+          { err, recommendationId: recommendation._id.toString() },
+          'PDFKit compilation error occurred'
+        );
         reject(err);
       });
     });

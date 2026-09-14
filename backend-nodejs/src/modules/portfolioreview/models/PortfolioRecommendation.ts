@@ -19,6 +19,7 @@ export interface IPortfolioRecommendation extends Document {
     status: RecommendationStatus;
     investorCategory?: ScoreCategoryCode | null;
     generatedDocumentUrl?: string | null;
+    documentS3Key?: string | null;
     funds: IRecommendationFundItem[];
     createdAt: Date;
     updatedAt: Date;
@@ -64,6 +65,7 @@ const portfolioRecommendationSchema = new Schema<IPortfolioRecommendation>(
             default: null,
         },
         generatedDocumentUrl: { type: String, default: null },
+        documentS3Key: { type: String, default: null },
         funds: [recommendationFundSchema],
     },
     {

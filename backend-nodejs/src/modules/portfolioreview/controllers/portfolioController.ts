@@ -252,3 +252,15 @@ export const getEcasDownloadUrl = asyncHandler(async (req: Request, res: Respons
   const fileUrl = await portfolioReviewService.getEcasPresignedUrl(s3Key);
   return res.status(200).json({ s3Key, fileUrl });
 });
+
+// GET /portfolio-recommendations/:id/download-url
+export const getRecommendationDownloadUrl = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!id) {
+    logger.warn({ ip: req.ip }, 'Get recommendation download URL failed: Missing id parameter');
+    throw new AppError('Recommendation ID is required', 400);
+  }
+
+  const fileUrl = await portfolioReviewService.getRecommendationDownloadUrl(id);
+  return res.status(200).json({ recommendationId: id, fileUrl });
+});
