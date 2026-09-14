@@ -9,9 +9,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+import java.util.Optional;
+
 @Repository
 public interface GroupRepository extends JpaRepository<Group, Long> {
     boolean existsByName(String name);
+
+    Optional<Group> findByName(String name);
 
     @Query("SELECT g FROM Group g WHERE g.id > :cursor ORDER BY g.id ASC")
     List<Group> findByIdGreaterThanOrderByIdAsc(@Param("cursor") Long cursor, org.springframework.data.domain.Pageable pageable);

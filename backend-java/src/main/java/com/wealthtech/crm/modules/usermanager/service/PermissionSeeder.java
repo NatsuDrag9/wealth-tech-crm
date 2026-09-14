@@ -3,9 +3,11 @@ package com.wealthtech.crm.modules.usermanager.service;
 import com.wealthtech.crm.modules.usermanager.entity.Permission;
 import com.wealthtech.crm.modules.usermanager.repository.PermissionRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(1)
 public class PermissionSeeder implements CommandLineRunner {
     private final PermissionRepository permissionRepository;
     private final PermissionService permissionService;
@@ -17,9 +19,11 @@ public class PermissionSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (permissionRepository.count() > 0) {
-            return;
-        }
+        // Master Funds & Eligible Funds
+        seedPermission("masterfund:read", "View Master Funds", "masterfund");
+        seedPermission("masterfund:create", "Create / Upload Master Funds", "masterfund");
+        seedPermission("masterfund:update", "Update Master Funds", "masterfund");
+        seedPermission("masterfund:delete", "Delete Master Funds", "masterfund");
 
         // Clients
         seedPermission("client:read", "View Client", "client");
