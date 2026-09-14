@@ -1,12 +1,13 @@
 package com.wealthtech.crm.modules.portfolioreview.controller;
 
-import java.net.MalformedURLException;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.wealthtech.crm.infrastructure.s3.S3Service;
 import com.wealthtech.crm.modules.portfolioreview.dto.CreateRecommendationRequest;
 import com.wealthtech.crm.modules.portfolioreview.dto.FlowTypeResponse;
 import com.wealthtech.crm.modules.portfolioreview.dto.PortfolioRecommendationResponse;
@@ -29,13 +31,16 @@ import com.wealthtech.crm.modules.usermanager.exception.NotFoundException;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/java-wtc-api/v1")
 @RequiredArgsConstructor
+@Slf4j
 public class PortfolioRecommendationController {
 
     private final PortfolioReviewService portfolioReviewService;
+    private final S3Service s3Service;
 
     // Recommendation flow types (REPLACE_FUNDS, NEW_PORTFOLIO)
     @GetMapping("/portfolio-recommendations/flow-types")
@@ -79,7 +84,7 @@ public class PortfolioRecommendationController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
-    // Stream generated PDF proposal document
+    // Stream generated PDF proposal document directly from S3 (or legacy disk with immediate cleanup)
     @GetMapping("/documents/recommendations/{filename:.+}")
     @PreAuthorize("hasAuthority('portfolioreview:read')")
     public ResponseEntity<Resource> downloadRecommendationPdf(@PathVariable String filename) {
@@ -87,20 +92,40 @@ public class PortfolioRecommendationController {
             throw new BadRequestException("Invalid filename");
         }
 
+        // 1. Fetch binary directly from S3
+        byte[] pdfBytes = null;
         try {
-            Path filePath = Paths.get("uploads/recommendations").resolve(filename).normalize();
-            Resource resource = new UrlResource(filePath.toUri());
-
-            if (!resource.exists() || !resource.isReadable()) {
-                throw new NotFoundException("Document not found: " + filename);
+            pdfBytes = s3Service.downloadFile("recommendations/" + filename);
+        } catch (Exception e) {
+            if (filename.startsWith("recommendation_") && filename.endsWith(".pdf")) {
+                String idPart = filename.substring("recommendation_".length(), filename.length() - ".pdf".length());
+                try {
+                    pdfBytes = s3Service.downloadFile("recommendations/" + idPart + "/" + filename);
+                } catch (Exception ignored) {}
             }
+        }
 
+        if (pdfBytes != null) {
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_PDF)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
-                    .body(resource);
-        } catch (MalformedURLException e) {
-            throw new NotFoundException("Document not found: " + filename);
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                    .body(new ByteArrayResource(pdfBytes));
         }
+
+        // 2. Check legacy disk storage as fallback, stream bytes, and immediately delete from disk!
+        Path legacyPath = Paths.get("uploads/recommendations").resolve(filename).normalize();
+        if (Files.exists(legacyPath)) {
+            try {
+                byte[] legacyBytes = Files.readAllBytes(legacyPath);
+                Files.deleteIfExists(legacyPath);
+                log.info("Streamed legacy local recommendation PDF and deleted from disk: {}", legacyPath);
+                return ResponseEntity.ok()
+                        .contentType(MediaType.APPLICATION_PDF)
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                        .body(new ByteArrayResource(legacyBytes));
+            } catch (IOException ignored) {}
+        }
+
+        throw new NotFoundException("Document not found: " + filename);
     }
 }
