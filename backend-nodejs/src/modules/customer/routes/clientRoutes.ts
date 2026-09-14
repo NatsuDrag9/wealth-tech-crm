@@ -12,6 +12,7 @@ import {
   bulkReassignRm,
   downloadBulkTemplate,
   uploadBulkClients,
+  getBulkUploadDownloadUrl,
 } from '../controllers/clientController';
 
 const router = Router();
@@ -32,6 +33,11 @@ router.post(
   requirePermission('client:create'),
   upload.single('file'),
   uploadBulkClients
+);
+router.get(
+  '/bulk-uploads/download-url',
+  requirePermission('client:read'),
+  getBulkUploadDownloadUrl
 );
 router.post('/bulk-reassign', requirePermission('client:update'), bulkReassignRm);
 

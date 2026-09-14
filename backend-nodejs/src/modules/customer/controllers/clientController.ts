@@ -4,6 +4,7 @@ import { AppError } from '../../../common/utils/AppError';
 import { logger } from '../../../common/utils/logger';
 import { clientService } from '../services/clientService';
 import { clientExcelService } from '../services/clientExcelService';
+import { s3Service } from '../../../common/services/s3Service';
 import { ClientStatus } from '../enums/clientEnums';
 
 // 1. GET /clients - List clients with search, status/RM filtering, and cursor pagination
@@ -129,6 +130,24 @@ export const uploadBulkClients = asyncHandler(async (req: Request, res: Response
   }
 
   const currentUserId = req.user?._id ? req.user._id.toString() : undefined;
+  const safeFilename = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const s3Key = `client-uploads/${Date.now()}_${safeFilename}`;
+  let presignedUrl: string | null = null;
+
+  try {
+    await s3Service.uploadFile({
+      key: s3Key,
+      buffer: req.file.buffer,
+      contentType: req.file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    presignedUrl = await s3Service.getPresignedDownloadUrl(s3Key);
+  } catch (s3Err: unknown) {
+    const msg = s3Err instanceof Error ? s3Err.message : String(s3Err);
+    logger.warn(
+      { error: msg, s3Key },
+      'S3 upload failed for client bulk upload. Proceeding with async database ingestion.'
+    );
+  }
 
   // Dispatch asynchronous background processing
   void clientService.processBulkUploadAsync(req.file.buffer, currentUserId);
@@ -137,5 +156,25 @@ export const uploadBulkClients = asyncHandler(async (req: Request, res: Response
     status: 'PROCESSING',
     message: 'Bulk client upload is being processed in background',
     filename: originalName,
+    s3Key,
+    fileUrl: presignedUrl,
   });
+});
+
+// 11. GET /clients/bulk-uploads/download-url - Retrieve time-limited pre-signed URL for an uploaded batch file
+export const getBulkUploadDownloadUrl = asyncHandler(async (req: Request, res: Response) => {
+  const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+
+  if (!key) {
+    logger.warn({ ip: req.ip }, 'Get bulk upload download URL failed: Missing key query param');
+    throw new AppError('Query parameter "key" is required', 400);
+  }
+
+  if (key.includes('..')) {
+    logger.warn({ ip: req.ip, key }, 'Get bulk upload download URL rejected: Path traversal detected');
+    throw new AppError('Invalid S3 key path', 400);
+  }
+
+  const fileUrl = await s3Service.getPresignedDownloadUrl(key);
+  return res.status(200).json({ s3Key: key, fileUrl });
 });
