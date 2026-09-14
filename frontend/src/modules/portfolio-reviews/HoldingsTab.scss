@@ -1,0 +1,112 @@
+@use '@/styles/variables' as *;
+
+.holdings-tab {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-6;
+
+  &__metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: $spacing-4;
+
+    @media (width <= 1024px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__metric-card {
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    padding: $spacing-4 $spacing-5;
+    box-shadow: $shadow-sm;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+  }
+
+  &__metric-label {
+    font-size: $font-size-xs;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $neutral-500;
+  }
+
+  &__metric-value {
+    font-size: $font-size-xl;
+    font-weight: 700;
+    color: $neutral-900;
+    line-height: 1.2;
+
+    &--primary {
+      color: $primary;
+    }
+
+    &--positive {
+      color: $success;
+    }
+
+    &--negative {
+      color: $danger;
+    }
+  }
+
+  &__metric-subtext {
+    font-size: $font-size-xs;
+    font-weight: 500;
+    color: $neutral-500;
+  }
+
+  &__table-wrapper {
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-lg;
+    box-shadow: $shadow-sm;
+    overflow: hidden;
+  }
+
+  &__empty-card {
+    background-color: $white;
+    border: 1px dashed $neutral-300;
+    border-radius: $border-radius-lg;
+    padding: $spacing-8 $spacing-6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: $spacing-4;
+  }
+
+  &__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 5.6rem;
+    height: 5.6rem;
+    border-radius: $border-radius-full;
+    background-color: $primary-light;
+    color: $primary;
+  }
+
+  &__empty-title {
+    font-size: $font-size-lg;
+    font-weight: 700;
+    color: $neutral-900;
+    margin: 0;
+  }
+
+  &__empty-desc {
+    font-size: $font-size-sm;
+    color: $neutral-500;
+    max-width: 48rem;
+    margin: 0;
+    line-height: 1.5;
+  }
+}

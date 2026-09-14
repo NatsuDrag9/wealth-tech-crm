@@ -1,0 +1,211 @@
+@use '@/styles/variables' as *;
+
+.proposal-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-6;
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
+  }
+
+  &__section-title {
+    font-size: $font-size-sm;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $neutral-600;
+    margin: 0;
+  }
+
+  &__strategy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-3;
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__strategy-card {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-2;
+    padding: $spacing-4;
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    font: inherit;
+    color: inherit;
+
+    &:hover {
+      border-color: $primary;
+      background-color: $neutral-50;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+    }
+
+    &--selected {
+      border-color: $primary;
+      background-color: $primary-light;
+
+      &:hover {
+        background-color: $primary-light;
+      }
+    }
+  }
+
+  &__strategy-header {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+    font-size: $font-size-base;
+    font-weight: 700;
+    color: $neutral-900;
+
+    .proposal-drawer__strategy-card--selected & {
+      color: $primary;
+    }
+  }
+
+  &__strategy-desc {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  &__allocations-list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-4;
+  }
+
+  &__allocation-card {
+    background-color: $neutral-50;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    padding: $spacing-4;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
+  }
+
+  &__allocation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: $font-size-sm;
+    font-weight: 600;
+    color: $neutral-800;
+  }
+
+  &__remove-btn {
+    background: none;
+    border: none;
+    color: $danger;
+    cursor: pointer;
+    font-size: $font-size-xs;
+    font-weight: 600;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: $spacing-1;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__inputs-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: $spacing-3;
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__input-group {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+  }
+
+  &__input-label {
+    font-size: $font-size-xs;
+    font-weight: 600;
+    color: $neutral-600;
+  }
+
+  &__text-input {
+    width: 100%;
+    height: 4rem;
+    padding: 0 $spacing-3;
+    border: 1px solid $neutral-300;
+    border-radius: $border-radius-sm;
+    font-size: $font-size-sm;
+    font-family: inherit;
+    background-color: $white;
+    color: $neutral-900;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $primary;
+      box-shadow: 0 0 0 2px rgba($primary, 0.2);
+    }
+  }
+
+  &__summary-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: $primary-light;
+    border: 1px solid rgba($primary, 0.2);
+    border-radius: $border-radius-md;
+    padding: $spacing-4 $spacing-5;
+  }
+
+  &__summary-label {
+    font-size: $font-size-sm;
+    font-weight: 600;
+    color: $primary;
+  }
+
+  &__summary-value {
+    font-size: $font-size-xl;
+    font-weight: 800;
+    color: $primary;
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: $spacing-3;
+    border-top: 1px solid $neutral-200;
+    padding-top: $spacing-5;
+  }
+
+  &__warning-box {
+    display: flex;
+    gap: $spacing-2;
+    padding: $spacing-3;
+    background-color: $warning-light;
+    border: 1px solid rgba($warning, 0.3);
+    border-radius: $border-radius-md;
+    font-size: $font-size-xs;
+    color: $warning;
+    line-height: 1.4;
+  }
+}

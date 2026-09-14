@@ -7,7 +7,7 @@ import { NotFound } from '@/modules/misc/NotFound';
 import { UserManager } from '@/modules/user-manager/UserManager';
 import { ClientManager } from '@/modules/client-manager/ClientManager';
 import { RiskAppetite } from '@/modules/risk-appetite/RiskAppetite';
-import { App } from '@/App';
+import { PortfolioReviews } from '@/modules/portfolio-reviews/PortfolioReviews';
 
 export interface RouteConfig {
   path: string;
@@ -46,7 +46,7 @@ export const APP_ROUTES: readonly RouteConfig[] = [
       },
       {
         path: 'portfolio-reviews',
-        element: <App />,
+        element: <PortfolioReviews />,
         requiredPermissions: [PermissionsEnum.PORTFOLIO_REVIEW_READ],
       },
       {
