@@ -14,4 +14,12 @@ export const config = {
   refreshTokenExpiry: process.env.REFRESH_TOKEN_EXPIRY || '7d',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
+  aws: {
+    region: process.env.AWS_REGION || 'us-east-1',
+    endpoint: process.env.AWS_ENDPOINT || 'http://localhost:4566',
+    s3Bucket: process.env.S3_BUCKET_NAME || 'wealthtech-crm-documents',
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    forcePathStyle: process.env.AWS_FORCE_PATH_STYLE !== 'false',
+  },
 };
