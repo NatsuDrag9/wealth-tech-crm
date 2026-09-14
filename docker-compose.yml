@@ -1,0 +1,155 @@
+services:
+  # ==========================================
+  # 1. PostgreSQL Database (for Java Backend)
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wealth_tech_crm_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wealth_tech_crm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 2. MongoDB Database (for Node.js Backend)
+  # ==========================================
+  mongodb:
+    image: mongo:7
+    container_name: crm-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: wealthtech_crm
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 3. Java Spring Boot Backend
+  # ==========================================
+  backend-java:
+    build:
+      context: ./backend-java
+      dockerfile: Dockerfile
+    container_name: crm-backend-java
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wealth_tech_crm_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_S3_ENDPOINT: http://localstack:4566
+      AWS_S3_BUCKET: wealthtech-crm-bucket
+      AWS_S3_PATH_STYLE: "true"
+    ports:
+      - "8080:8080"
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 4. Node.js Express Backend
+  # ==========================================
+  backend-nodejs:
+    build:
+      context: ./backend-nodejs
+      dockerfile: Dockerfile
+    container_name: crm-backend-nodejs
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongodb:27017/wealthtech_crm
+      API_PREFIX: /nodejs-wtc-api/v1
+      JWT_SECRET: wealthtech_crm_super_secret_jwt_key_dev_2026
+      JWT_EXPIRY: 15m
+      REFRESH_TOKEN_EXPIRY: 7d
+      CORS_ORIGIN: http://localhost:3000
+      UPLOAD_DIR: uploads
+    ports:
+      - "5000:5000"
+    volumes:
+      - node_uploads:/app/uploads
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 5. Frontend (React 19 + Nginx)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_JAVA_API_BASE_URL: /java-wtc-api/v1
+        VITE_NODEJS_API_BASE_URL: /nodejs-wtc-api/v1
+        VITE_DEFAULT_BACKEND: nodejs
+    container_name: crm-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend-java
+      - backend-nodejs
+    ports:
+      - "3000:80"
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 6. LocalStack (AWS S3 Emulator)
+  # ==========================================
+  localstack:
+    image: localstack/localstack:latest
+    container_name: crm-localstack
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+    networks:
+      - crm-network
+
+# ==========================================
+# Named Volumes & Networks
+# ==========================================
+volumes:
+  postgres_data:
+  mongo_data:
+  node_uploads:
+  localstack_data:
+
+networks:
+  crm-network:
+    driver: bridge

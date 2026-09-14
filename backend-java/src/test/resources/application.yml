@@ -14,3 +14,13 @@ jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971
   access-token-expiration-ms: 900000
   refresh-token-expiration-ms: 604800000
+
+aws:
+  region: us-east-1
+  access-key-id: test
+  secret-access-key: test
+  s3:
+    endpoint: http://localhost:4566
+    bucket-name: wealthtech-crm-test-bucket
+    path-style-access-enabled: true
+    presigned-url-duration-minutes: 60

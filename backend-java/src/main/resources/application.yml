@@ -24,6 +24,18 @@ spring:
 jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971 # 256-bit Secret Key
   access-token-expiration-ms: 900000     # 15 Minutes (15 * 60 * 1000)
+
+# AWS S3 / LocalStack Storage Configuration
+aws:
+  region: ${AWS_REGION:us-east-1}
+  access-key-id: ${AWS_ACCESS_KEY_ID:test}
+  secret-access-key: ${AWS_SECRET_ACCESS_KEY:test}
+  s3:
+    endpoint: ${AWS_S3_ENDPOINT:http://localhost:4566} # LocalStack default endpoint
+    bucket-name: ${AWS_S3_BUCKET:wealthtech-crm-bucket}
+    path-style-access-enabled: ${AWS_S3_PATH_STYLE:true} # Required for LocalStack
+    presigned-url-duration-minutes: ${AWS_S3_PRESIGNED_MINUTES:60}
+
 # SpringDoc OpenAPI / Swagger UI Configuration
 springdoc:
   api-docs:
