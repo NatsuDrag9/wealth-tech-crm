@@ -5,6 +5,7 @@ import { asyncHandler } from '../../../common/middleware/asyncHandler';
 import { AppError } from '../../../common/utils/AppError';
 import { logger } from '../../../common/utils/logger';
 import { portfolioReviewService } from '../services/portfolioReviewService';
+import { eligibleFundExcelService } from '../services/eligibleFundExcelService';
 import { RecommendationFlowType } from '../enums/portfolioEnums';
 
 // Eligible Funds
@@ -168,4 +169,86 @@ export const downloadRecommendationPdf = asyncHandler(async (req: Request, res: 
   res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
 
   return res.sendFile(filePath);
+});
+
+// Master Funds S3 Management
+// POST /admin/master-funds/upload and POST /eligible-funds/upload
+export const uploadMasterFunds = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    logger.warn({ ip: req.ip }, 'Master funds upload rejected: No file uploaded');
+    throw new AppError('Please select an Excel file to upload', 400);
+  }
+
+  const filename = req.file.originalname;
+  if (!filename.endsWith('.xlsx') && !filename.endsWith('.xls')) {
+    logger.warn({ ip: req.ip, filename }, 'Master funds upload rejected: Invalid file extension');
+    throw new AppError('Only Excel files (.xlsx, .xls) are supported', 400);
+  }
+
+  const result = await eligibleFundExcelService.processUpload(req.file.buffer, filename);
+  return res.status(200).json(result);
+});
+
+// GET /admin/master-funds/template and GET /eligible-funds/template
+export const downloadMasterFundsTemplate = asyncHandler(async (_req: Request, res: Response) => {
+  const templateBuffer = await eligibleFundExcelService.generateTemplate();
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader('Content-Disposition', 'attachment; filename="master_funds_template.xlsx"');
+
+  return res.status(200).send(templateBuffer);
+});
+
+// eCAS Statements S3 Management
+// POST /portfolio-reviews/ecas/upload
+export const uploadEcasStatement = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    logger.warn({ ip: req.ip }, 'eCAS upload rejected: No file uploaded');
+    throw new AppError('Please select an eCAS statement file to upload', 400);
+  }
+
+  const clientId =
+    typeof req.body?.clientId === 'string'
+      ? req.body.clientId
+      : typeof req.body?.client_id === 'string'
+        ? req.body.client_id
+        : typeof req.query.clientId === 'string'
+          ? req.query.clientId
+          : undefined;
+
+  const result = await portfolioReviewService.uploadEcasStatement({
+    buffer: req.file.buffer,
+    originalFilename: req.file.originalname,
+    clientId,
+    contentType: req.file.mimetype,
+  });
+
+  return res.status(200).json(result);
+});
+
+// GET /portfolio-reviews/:id/ecas-url
+export const getEcasDownloadUrl = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const keyQuery = typeof req.query.key === 'string' ? req.query.key : undefined;
+
+  let s3Key: string | null = keyQuery || null;
+
+  if (!s3Key && id) {
+    const review = await portfolioReviewService.getReview(id);
+    s3Key = review.ecasFileKey || null;
+  }
+
+  if (!s3Key) {
+    logger.warn(
+      { id, queryKey: keyQuery, ip: req.ip },
+      'eCAS download URL failed: Missing S3 key or review has no eCAS attached'
+    );
+    throw new AppError('No eCAS document found for this review', 404);
+  }
+
+  const fileUrl = await portfolioReviewService.getEcasPresignedUrl(s3Key);
+  return res.status(200).json({ s3Key, fileUrl });
 });

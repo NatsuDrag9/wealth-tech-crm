@@ -27,6 +27,7 @@ export interface IPortfolioReview extends Document {
     gainPercentage: number;
     cagr: number;
     note?: string | null;
+    ecasFileKey?: string | null;
     entries: IPortfolioEntry[];
     createdAt: Date;
     updatedAt: Date;
@@ -79,6 +80,7 @@ const portfolioReviewSchema = new Schema<IPortfolioReview>(
         gainPercentage: { type: Number, default: 0 },
         cagr: { type: Number, default: 0 },
         note: { type: String, trim: true },
+        ecasFileKey: { type: String, trim: true, default: null },
         entries: [portfolioEntrySchema],
     },
     {

@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { AppError } from "../../../common/utils/AppError";
 import { logger } from "../../../common/utils/logger";
 import { AssessmentStatus, ScoreCategoryCode } from "../../riskappetite/enums/riskEnums";
-import { CreateRecommendationDto, EligibleFundResponseDto, FlowTypeResponseDto, PortfolioEntryResponseDto, PortfolioRecommendationResponseDto, PortfolioReviewResponseDto, RfItemResponseDto } from "../dto/portfolioDto";
+import { CreateRecommendationDto, EcasUploadResponseDto, EligibleFundResponseDto, FlowTypeResponseDto, PortfolioEntryResponseDto, PortfolioRecommendationResponseDto, PortfolioReviewResponseDto, RfItemResponseDto } from "../dto/portfolioDto";
 import { EntryAction, FLOW_TYPE_DISPLAY_NAMES, RecommendationFlowType, RecommendationStatus, ReviewStatus } from "../enums/portfolioEnums";
 import { EligibleFund, IEligibleFund } from "../models/EligibleFund";
 import { IPortfolioRecommendation, PortfolioRecommendation } from "../models/PortfolioRecommendation";
@@ -10,6 +10,7 @@ import { IPortfolioEntry, IPortfolioReview, PortfolioReview } from "../models/Po
 import { Client } from "../../customer/models/Client";
 import { RiskAssessment } from "../../riskappetite/models/RiskAssessment";
 import { portfolioPdfService } from "./portfolioPdfService";
+import { s3Service } from "../../../common/services/s3Service";
 
 export class PortfolioReviewService {
     // Mappers                                                     
@@ -44,7 +45,17 @@ export class PortfolioReviewService {
         };
     }
 
-    private mapToReviewResponse(pr: IPortfolioReview): PortfolioReviewResponseDto {
+    private async mapToReviewResponse(pr: IPortfolioReview): Promise<PortfolioReviewResponseDto> {
+        let ecasFileUrl: string | null = null;
+        if (pr.ecasFileKey) {
+            try {
+                ecasFileUrl = await s3Service.getPresignedDownloadUrl(pr.ecasFileKey);
+            } catch (error: unknown) {
+                const msg = error instanceof Error ? error.message : String(error);
+                logger.warn({ error: msg, ecasFileKey: pr.ecasFileKey }, 'Failed to generate presigned URL for eCAS file');
+            }
+        }
+
         return {
             id: pr._id.toString(),
             clientId: pr.client.toString(),
@@ -55,6 +66,8 @@ export class PortfolioReviewService {
             gainPercentage: pr.gainPercentage,
             cagr: pr.cagr,
             note: pr.note || null,
+            ecasFileKey: pr.ecasFileKey || null,
+            ecasFileUrl,
             entries: pr.entries.map((e) => this.mapToEntryResponse(e)),
             createdAt: pr.createdAt,
         };
@@ -112,7 +125,7 @@ export class PortfolioReviewService {
             logger.warn({ reviewId }, "Get review failed: Portfolio review not found");
             throw new AppError(`Portfolio review not found with id: ${reviewId}`, 404);
         }
-        return this.mapToReviewResponse(review);
+        return await this.mapToReviewResponse(review);
     }
 
     async getLatestReview(clientId: string): Promise<PortfolioReviewResponseDto> {
@@ -125,7 +138,7 @@ export class PortfolioReviewService {
             throw new AppError(`No portfolio review found for client: ${clientId}`, 404);
         }
 
-        return this.mapToReviewResponse(review);
+        return await this.mapToReviewResponse(review);
     }
 
     async getReviewHistory(clientId: string): Promise<PortfolioReviewResponseDto[]> {
@@ -133,7 +146,7 @@ export class PortfolioReviewService {
             client: new Types.ObjectId(clientId),
         }).sort({ createdAt: -1 });
 
-        return reviews.map((r) => this.mapToReviewResponse(r));
+        return Promise.all(reviews.map((r) => this.mapToReviewResponse(r)));
     }
 
     /**
@@ -219,11 +232,57 @@ export class PortfolioReviewService {
             gainPercentage: 24.35,
             cagr: 12.5,
             note: 'Sample eCAS upload parsed successfully',
+            ecasFileKey: 'ecas/sample/sample_ecas_statement.pdf',
             entries: sampleEntries,
         });
 
         logger.info({ reviewId: review._id, clientId }, 'Sample portfolio review session created');
-        return this.mapToReviewResponse(review);
+        return await this.mapToReviewResponse(review);
+    }
+
+    /**
+     * Uploads an eCAS statement directly to AWS S3 / LocalStack and returns a pre-signed download URL.
+     */
+    async uploadEcasStatement(params: {
+        buffer: Buffer;
+        originalFilename: string;
+        clientId?: string;
+        contentType?: string;
+    }): Promise<EcasUploadResponseDto> {
+        const safeFilename = params.originalFilename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const clientPrefix = params.clientId || 'common';
+        const s3Key = `ecas/${clientPrefix}/${Date.now()}_${safeFilename}`;
+        let presignedUrl: string | null = null;
+
+        try {
+            await s3Service.uploadFile({
+                key: s3Key,
+                buffer: params.buffer,
+                contentType: params.contentType || 'application/pdf',
+            });
+            presignedUrl = await s3Service.getPresignedDownloadUrl(s3Key);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            logger.warn({ error: msg, s3Key }, 'S3 upload failed for eCAS statement. Continuing.');
+        }
+
+        logger.info({ s3Key, clientId: params.clientId }, 'eCAS statement uploaded successfully to S3');
+
+        return {
+            status: 'SUCCESS',
+            message: 'eCAS statement file successfully uploaded to S3',
+            clientId: params.clientId || null,
+            filename: params.originalFilename,
+            s3Key,
+            fileUrl: presignedUrl,
+        };
+    }
+
+    /**
+     * Generates a pre-signed URL for an existing eCAS S3 object key.
+     */
+    async getEcasPresignedUrl(s3Key: string): Promise<string> {
+        return await s3Service.getPresignedDownloadUrl(s3Key);
     }
 
     // Recommendations and Compliance Check

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticate, requirePermission } from '../../../common/middleware/authMiddleware';
 import {
   getEligibleFunds,
@@ -12,14 +13,37 @@ import {
   getRecommendationsByClient,
   triggerPdfGeneration,
   downloadRecommendationPdf,
+  uploadMasterFunds,
+  downloadMasterFundsTemplate,
+  uploadEcasStatement,
+  getEcasDownloadUrl,
 } from '../controllers/portfolioController';
 
 const router = Router();
 
+// In-memory multer storage for Excel spreadsheets and PDF statements (15MB cap)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
+
 // Protect ALL routes in Portfolio Review with JWT authentication
 router.use(authenticate);
 
-// Eligible Funds
+// 1. Master Funds Management & Ingestion (S3 / LocalStack)
+router.post(
+  ['/eligible-funds/upload', '/admin/master-funds/upload'],
+  requirePermission('eligiblefund:upload'),
+  upload.single('file'),
+  uploadMasterFunds
+);
+
+router.get(
+  ['/eligible-funds/template', '/eligible-funds/upload-template', '/admin/master-funds/template'],
+  requirePermission('eligiblefund:read'),
+  downloadMasterFundsTemplate
+);
+
 router.get(
   '/eligible-funds',
   requirePermission('portfolioreview:read'),
@@ -32,8 +56,28 @@ router.get(
   getFlowTypes
 );
 
-// Portfolio Reviews and Holdings
-// Specific collection/client routes MUST precede /portfolio-reviews/:id
+// 2. eCAS Statement Upload & URL Retrieval (S3 / LocalStack)
+// Note: Static subpaths must precede parameterized /:id routes
+router.post(
+  '/portfolio-reviews/ecas/upload',
+  requirePermission('portfolioreview:create'),
+  upload.single('file'),
+  uploadEcasStatement
+);
+
+router.get(
+  '/portfolio-reviews/ecas/download-url',
+  requirePermission('portfolioreview:read'),
+  getEcasDownloadUrl
+);
+
+router.get(
+  '/portfolio-reviews/:id/ecas-url',
+  requirePermission('portfolioreview:read'),
+  getEcasDownloadUrl
+);
+
+// 3. Portfolio Reviews and Holdings
 router.get(
   '/portfolio-reviews/client/:clientId/latest',
   requirePermission('portfolioreview:read'),
@@ -58,14 +102,13 @@ router.get(
   getReview
 );
 
-// Portfolio Recommendation Proposals
+// 4. Portfolio Recommendation Proposals
 router.post(
   '/portfolio-recommendations',
   requirePermission('portfolioreview:create'),
   createRecommendation
 );
 
-// Collection query: GET /portfolio-recommendations?clientId=...
 router.get(
   '/portfolio-recommendations',
   requirePermission('portfolioreview:read'),
@@ -84,7 +127,7 @@ router.post(
   triggerPdfGeneration
 );
 
-// Document Streaming / Download
+// 5. Document Streaming / Download
 router.get(
   '/documents/recommendations/:filename',
   requirePermission('portfolioreview:read'),

@@ -45,8 +45,30 @@ export interface PortfolioReviewResponseDto {
     gainPercentage: number;
     cagr: number;
     note?: string | null;
+    ecasFileKey?: string | null;
+    ecasFileUrl?: string | null;
     entries: PortfolioEntryResponseDto[];
     createdAt: Date;
+}
+
+export interface MasterFundUploadResponseDto {
+    status: string;
+    message: string;
+    filename: string;
+    s3Key: string;
+    fileUrl: string | null;
+    totalRecords: number;
+    insertedRecords: number;
+    updatedRecords: number;
+}
+
+export interface EcasUploadResponseDto {
+    status: string;
+    message: string;
+    clientId?: string | null;
+    filename: string;
+    s3Key: string;
+    fileUrl: string | null;
 }
 
 // Recommendation Proposal DTOs
