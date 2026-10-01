@@ -1,5 +1,19 @@
 # Node.js Backend
 
+## Default Admin Credentials
+
+| Parameter | Value |
+|---|---|
+| **Email** | `admin@wealthtech.com` |
+| **Password** | `Admin@123` |
+| **Role** | `ADMIN` |
+| **Department / Group** | `Administration` |
+| **Login Endpoint** | `POST /nodejs-wtc-api/v1/auth/login` (via Nginx proxy) or `POST /api/v1/auth/login` (direct) |
+| **Source Seeder** | `backend-nodejs/src/modules/usermanager/seeders/adminSeeder.ts` |
+| **Environment Overrides** | `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
+
+---
+
 ## Architecture
 
 ### Client

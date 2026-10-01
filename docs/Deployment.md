@@ -135,3 +135,7 @@ import swaggerDocument from './swagger.json';
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 ```
 Access at: `http://<host>/api-docs`
+
+Access creds:
+- Work Email: admin@wealthtech.com
+- Password: Admin@123

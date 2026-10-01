@@ -1,3 +1,18 @@
+# Java Backend
+
+## Default Admin Credentials
+
+| Parameter | Value |
+|---|---|
+| **Email** | `admin@wealthtech.com` |
+| **Password** | `Admin@123` |
+| **Role** | `ADMIN` |
+| **Department / Group** | `Administration` |
+| **Login Endpoint** | `POST /java-wtc-api/v1/auth/login` (via Nginx proxy) or `POST /api/v1/auth/login` (direct) |
+| **Source Seeder** | `backend-java/src/main/java/com/wealthtech/crm/modules/usermanager/service/AdminRoleSeeder.java` |
+
+---
+
 ### Implementation
 
 #### Authentication
@@ -249,7 +264,7 @@ erDiagram
 
 #### 4. AWS S3 / LocalStack Storage & Pre-Signed URL Architecture
 1. **Admin Role & Governance Bootstrap**:
-   - `AdminRoleSeeder` runs on startup, ensures the `Administration` department/group exists, creates the `ADMIN` role with all platform permissions (including `masterfund:*`), and provisions the default system administrator (`admin@wealthtech.crm` / `Admin@123`).
+   - `AdminRoleSeeder` runs on startup, ensures the `Administration` department/group exists, creates the `ADMIN` role with all platform permissions (including `masterfund:*`), and provisions the default system administrator (`admin@wealthtech.com` / `Admin@123`).
 2. **Master Funds Ingestion**:
    - `POST /java-wtc-api/v1/admin/master-funds/upload`: Restricted to `ADMIN` role. Stores the uploaded `.xlsx` spreadsheet in S3 under `master-funds/`, parses fund records via Apache POI, upserts `EligibleFund` entities by ISIN, and returns a time-limited pre-signed download URL.
    - `GET /java-wtc-api/v1/admin/master-funds/template`: Downloads styled master funds Excel template.
