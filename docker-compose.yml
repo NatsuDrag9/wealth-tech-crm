@@ -5,21 +5,25 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: crm-postgres
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
     environment:
-      POSTGRES_DB: wealth_tech_crm_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d wealth_tech_crm_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks:
       - crm-network
 
@@ -29,9 +33,10 @@ services:
   mongodb:
     image: mongo:7
     container_name: crm-mongodb
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
-      MONGO_INITDB_DATABASE: wealthtech_crm
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
     ports:
       - "27017:27017"
     volumes:
@@ -40,8 +45,12 @@ services:
       test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - crm-network
 
@@ -53,24 +62,30 @@ services:
       context: ./backend-java
       dockerfile: Dockerfile
     container_name: crm-backend-java
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
     depends_on:
       postgres:
         condition: service_healthy
+      localstack:
+        condition: service_started
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wealth_tech_crm_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
+      JWT_SECRET: ${JAVA_JWT_SECRET}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_S3_ENDPOINT: http://localstack:4566
-      AWS_S3_BUCKET: wealthtech-crm-bucket
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       AWS_S3_PATH_STYLE: "true"
     ports:
       - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - crm-network
 
@@ -82,24 +97,28 @@ services:
       context: ./backend-nodejs
       dockerfile: Dockerfile
     container_name: crm-backend-nodejs
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
     depends_on:
       mongodb:
         condition: service_healthy
     environment:
       PORT: 5000
       NODE_ENV: production
-      MONGO_URI: mongodb://mongodb:27017/wealthtech_crm
+      MONGO_URI: mongodb://mongodb:27017/${MONGO_INITDB_DATABASE}
       API_PREFIX: /nodejs-wtc-api/v1
-      JWT_SECRET: wealthtech_crm_super_secret_jwt_key_dev_2026
-      JWT_EXPIRY: 15m
-      REFRESH_TOKEN_EXPIRY: 7d
+      JWT_SECRET: ${NODE_JWT_SECRET}
+      JWT_EXPIRY: ${JWT_EXPIRY}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY}
       CORS_ORIGIN: http://localhost:3000
       UPLOAD_DIR: uploads
     ports:
       - "5000:5000"
     volumes:
       - node_uploads:/app/uploads
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks:
       - crm-network
 
@@ -115,12 +134,16 @@ services:
         VITE_NODEJS_API_BASE_URL: /nodejs-wtc-api/v1
         VITE_DEFAULT_BACKEND: nodejs
     container_name: crm-frontend
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
     depends_on:
       - backend-java
       - backend-nodejs
     ports:
       - "3000:80"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     networks:
       - crm-network
 
@@ -128,16 +151,20 @@ services:
   # 6. LocalStack (AWS S3 Emulator)
   # ==========================================
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.1
     container_name: crm-localstack
-    restart: unless-stopped
+    restart: "${RESTART_POLICY:-no}"
     ports:
       - "4566:4566"
     environment:
       - SERVICES=s3
-      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_DEFAULT_REGION=${AWS_REGION}
     volumes:
       - localstack_data:/var/lib/localstack
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - crm-network
 
