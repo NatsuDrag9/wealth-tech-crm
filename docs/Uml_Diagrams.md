@@ -1,0 +1,1428 @@
+# System Architecture & UML Diagrams
+
+---
+
+## Java UML Diagrams
+
+### 1. High-Level Component & Layered Architecture
+
+> [!TIP]
+> **How to view these diagrams comfortably:**
+> - **In-Editor / Browser**: Use browser zoom (`Ctrl` + `+` / `Cmd` + `+`).
+> - **Mermaid Live Editor**: Copy any ````mermaid` block into [mermaid.live](https://mermaid.live) for interactive panning, infinite zoom, and high-resolution SVG/PNG exports.
+> - **Modular Breakdowns**: Section 1 is broken down below into a **Macro 5-Tier Overview** followed by **3 focused Subsystem Diagrams** (Security Pipeline, Web & Domain Services, and Data Storage) rendered at large, easily readable font sizes.
+
+#### 1.1 Macro Layered Architecture (Overview)
+A high-level view of the 5 primary architectural tiers in `backend-java`:
+
+```mermaid
+flowchart TD
+    Client["1. Client Tier<br/>(React SPA via Nginx Reverse Proxy)"]
+    Sec["2. Security & Gateway Filter Chain<br/>(CorsFilter, JwtAuthenticationFilter, SecurityContextHolder)"]
+    Web["3. REST Presentation Layer<br/>(Auth, User, Client, Portfolio Review, Recommendation, Admin MF, Risk)"]
+    Service["4. Business Service Domain & Infrastructure<br/>(Auth, RBAC, Client, PortfolioReview, S3Service, POI Ingestion, OpenPDF)"]
+    Storage["5. Persistence & Physical Storage<br/>(Spring Data JPA / PostgreSQL Database + AWS S3 / LocalStack)"]
+
+    Client -->|HTTP / REST JSON| Sec
+    Sec -->|Authenticated Principal & Authorities| Web
+    Web -->|DTO Ingestion & Orchestration| Service
+    Service -->|Entities & Object Streams| Storage
+```
+
+#### 1.2 Subsystem A: Security & Authentication Request Pipeline
+Illustrates request ingress from the browser through Nginx, CORS, JWT extraction, user detail loading, and authorization context setup.
+
+```mermaid
+flowchart LR
+    Client["React UI"] -->|HTTP / Bearer JWT| Nginx["Nginx Reverse Proxy"]
+    Nginx --> Cors["CorsFilter"]
+    Cors --> JwtFilter["JwtAuthenticationFilter"]
+    
+    subgraph TokenAuth["Token Verification & Principal Loading"]
+        JwtFilter -->|Validate Signature| Provider["JwtTokenProvider"]
+        JwtFilter -->|Load User & Permissions| UDS["CustomUserDetailsService"]
+        UDS -->|Query User + Role + 49 Permissions| DB[("PostgreSQL")]
+    end
+    
+    JwtFilter -->|Set Authentication Token| SecContext["SecurityContextHolder"]
+    SecContext --> Dispatch["Dispatch to Protected REST Controllers"]
+```
+
+#### 1.3 Subsystem B: Presentation Controllers & Service Domain Mapping
+Maps each REST controller to its backing domain services and specialized infrastructure workers.
+
+```mermaid
+flowchart LR
+    subgraph Controllers["REST Controllers (/java-wtc-api/v1)"]
+        AC["AuthController"]
+        UC["UserController / GroupController / RoleController"]
+        CC["ClientController"]
+        PRC["PortfolioReviewController"]
+        REC["PortfolioRecommendationController"]
+        MFC["AdminMasterFundController"]
+        RC["RiskAssessmentController"]
+    end
+
+    subgraph Services["Domain Services & Processing Engines"]
+        AS["AuthService"]
+        US["UserService / GroupService / RoleService"]
+        CS["ClientService"]
+        PRS["PortfolioReviewService"]
+        PDF["PortfolioPdfGeneratorService (OpenPDF in RAM)"]
+        MFS["MasterFundService"]
+        POI["EligibleFundExcelService (Apache POI)"]
+        RS["RaService"]
+    end
+
+    AC --> AS
+    UC --> US
+    CC --> CS
+    PRC --> PRS
+    REC --> PRS
+    PRS -->|Async Task| PDF
+    MFC --> MFS
+    MFS --> POI
+    RC --> RS
+```
+
+#### 1.4 Subsystem C: Persistence, AWS S3 & Physical Storage Tier
+Illustrates the routing of transactional relational data to PostgreSQL and binary document/spreadsheet storage to AWS S3 / LocalStack.
+
+```mermaid
+flowchart LR
+    subgraph Services["Application Services"]
+        CS["ClientService"]
+        PRS["PortfolioReviewService"]
+        PDF["PortfolioPdfGeneratorService"]
+        MFS["MasterFundService"]
+    end
+
+    subgraph Repos["Spring Data JPA Repositories"]
+        CR["ClientRepository / ProfileRepo"]
+        PRR["PortfolioReviewRepo / EntryRepo"]
+        RR["PortfolioRecommendationRepo / FundItemRepo"]
+        EFR["EligibleFundRepository"]
+        UR["UserRepository / RoleRepo / GroupRepo"]
+    end
+
+    subgraph CloudInfra["AWS S3 / LocalStack Integration"]
+        S3S["S3Service (AWS SDK v2)"]
+        Presigner["S3Presigner (Pre-Signed URLs)"]
+    end
+
+    subgraph Storage["Physical Storage"]
+        Postgres[("PostgreSQL Database<br/>(Relational Records & Metadata)")]
+        S3Bucket[("AWS S3 / LocalStack Bucket<br/>(PDFs, Statements, Excel Files)")]
+    end
+
+    CS --> CR & S3S
+    PRS --> PRR & RR & EFR & S3S
+    PDF --> S3S
+    MFS --> EFR & S3S
+    S3S --> Presigner
+
+    CR & PRR & RR & EFR & UR -->|Hibernate ORM / JDBC| Postgres
+    S3S -->|PutObject / GetObject HTTP| S3Bucket
+```
+
+#### 1.5 Tier Responsibilities & Structural Summary
+| Architectural Tier | Primary Packages & Components | Core Responsibilities |
+|---|---|---|
+| **Client & Ingress** | React Frontend, Nginx Reverse Proxy | Static UI serving, path routing (`/java-wtc-api/v1/*`), SSL termination. |
+| **Security & Gateway** | `security.JwtAuthenticationFilter`, `security.SecurityConfig`, `CustomUserDetailsService` | Stateless JWT validation, `SecurityContext` establishment, RBAC authority resolution. |
+| **REST Controllers** | `modules.*.controller.*`, `common.exception.GlobalExceptionHandler` | HTTP contract exposure, payload validation (`@Valid`), HTTP status mapping. |
+| **Domain Services** | `modules.*.service.*` | Business transactions (`@Transactional`), business rules, scoring calculations. |
+| **Async & Document Engines** | `PortfolioPdfGeneratorService`, `EligibleFundExcelService` | In-memory OpenPDF rendering via `ByteArrayOutputStream`, Apache POI streaming. |
+| **Cloud & Object Storage** | `infrastructure.s3.S3Service`, `infrastructure.s3.AwsS3Config` | AWS S3 / LocalStack object uploads, HMAC-SHA256 pre-signed GET URL issuance. |
+| **Data Persistence** | `modules.*.repository.*`, Spring Data JPA, Hibernate | Typed repository queries, pagination cursors, entity lifecycle mapping to PostgreSQL. |
+
+---
+
+### 2. Domain Model & Class Diagrams (Source-Verified)
+
+#### 2.1 User Management & Role-Based Access Control (RBAC)
+The RBAC module models departments (`Group`), granular privileges (`Permission`), and composite authorizations (`Role`) attached to users. `Permission` directly implements Spring Security's `GrantedAuthority`.
+
+```mermaid
+classDiagram
+    class User {
+        +Long id
+        +String email
+        +String password
+        +String firstName
+        +String lastName
+        +Long createdBy
+        +Long updatedBy
+        +List~String~ languages
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class Group {
+        +Long id
+        +String name
+        +String description
+        +Long createdBy
+        +Long updatedBy
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class Role {
+        +Long id
+        +String name
+        +String description
+        +Long createdBy
+        +Long updatedBy
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class Permission {
+        +Long id
+        +String name
+        +String displayName
+        +String resource
+        +getAuthority() String
+    }
+
+    User "*" --> "0..1" Group : belongs to
+    User "*" --> "0..1" Role : assigned
+    User "*" --> "0..1" User : reports to
+    Role "*" --> "1" Group : categorized under
+    Role "*" -- "*" Permission : grants
+```
+
+#### 2.2 Customer & KYC Management
+Customer management decouples frequently queried identity attributes from deeper KYC compliance data via a vertical table partitioning pattern (`Client` $\rightarrow$ `ClientProfile`).
+
+```mermaid
+classDiagram
+    class Client {
+        +Long id
+        +String firstName
+        +String lastName
+        +String email
+        +String phone
+        +String pan
+        +LocalDate dateOfBirth
+        +Gender gender
+        +ClientStatus status
+        +LocalDate signUpDate
+        +Long createdBy
+        +Long updatedBy
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+        +setProfile(profile) void
+        +setStatus(status) void
+    }
+
+    class ClientProfile {
+        +Long id
+        +KycStatus kycStatus
+        +ClientStatus clientStatus
+        +String addressLine
+        +String city
+        +String state
+        +String pincode
+        +String country
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class ClientStatus {
+        <<enumeration>>
+        ONBOARDING
+        ACTIVE
+        INACTIVE
+    }
+
+    class KycStatus {
+        <<enumeration>>
+        PENDING
+        VERIFIED
+        REJECTED
+    }
+
+    class Gender {
+        <<enumeration>>
+        MALE
+        FEMALE
+        OTHER
+    }
+
+    class User {
+        +Long id
+        +String email
+        +String firstName
+        +String lastName
+    }
+
+    Client "1" *-- "1" ClientProfile : has profile
+    User "1" --> "*" Client : manages (Relationship Manager)
+    Client --> ClientStatus : status
+    Client --> Gender : gender
+    ClientProfile --> KycStatus : kycStatus
+    ClientProfile --> ClientStatus : clientStatus
+```
+
+#### 2.3 Portfolio Review, Holdings & Recommendation Proposals
+This domain model governs the client's mutual fund portfolio review, hold/sell classifications, eligible fund universe filtering, and final PDF proposal recommendations.
+
+```mermaid
+classDiagram
+    class PortfolioReview {
+        +Long id
+        +Long clientId
+        +ReviewStatus status
+        +BigDecimal totalInvested
+        +BigDecimal totalCurrentValue
+        +BigDecimal totalGain
+        +Double gainPercentage
+        +Double cagr
+        +String note
+        +String ecasFileKey
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class PortfolioEntry {
+        +Long id
+        +String fundName
+        +String isin
+        +BigDecimal units
+        +BigDecimal purchaseNav
+        +BigDecimal currentNav
+        +BigDecimal investedAmount
+        +BigDecimal currentValue
+        +BigDecimal gain
+        +Double absReturnPct
+        +Double cagrPct
+        +Integer holdingDays
+        +EntryAction action
+    }
+
+    class PortfolioRecommendation {
+        +Long id
+        +Long clientId
+        +RecommendationFlowType flowType
+        +RecommendationStatus status
+        +ScoreCategory investorCategory
+        +String generatedDocumentUrl
+        +String documentS3Key
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+    }
+
+    class RecommendationFundItem {
+        +Long id
+        +BigDecimal amount
+        +Integer displayOrder
+    }
+
+    class EligibleFund {
+        +Long id
+        +String fundName
+        +String isin
+        +String fundSubCategory
+        +String assetClass
+        +String instrumentType
+        +ScoreCategory scoreCategory
+        +Boolean isActive
+    }
+
+    class ReviewStatus {
+        <<enumeration>>
+        PENDING
+        PROCESSING
+        COMPLETED
+        FAILED
+    }
+
+    class EntryAction {
+        <<enumeration>>
+        HOLD
+        SELL
+    }
+
+    class RecommendationFlowType {
+        <<enumeration>>
+        REPLACE_FUNDS
+        NEW_PORTFOLIO
+    }
+
+    class RecommendationStatus {
+        <<enumeration>>
+        SAVED
+        PDF_GENERATED
+        PDF_FAILED
+    }
+
+    PortfolioReview "1" *-- "*" PortfolioEntry : contains holdings
+    PortfolioReview "0..1" <-- "1" PortfolioRecommendation : reviews against (optional)
+    PortfolioRecommendation "1" *-- "*" RecommendationFundItem : specifies
+    RecommendationFundItem "*" --> "1" EligibleFund : recommends fund
+    RecommendationFundItem "*" --> "0..1" PortfolioEntry : replaces holding
+    PortfolioEntry --> EntryAction : action
+    PortfolioRecommendation --> RecommendationFlowType : flowType
+    PortfolioRecommendation --> RecommendationStatus : status
+    PortfolioReview --> ReviewStatus : status
+```
+
+#### 2.4 Risk Assessment & Suitability Engine
+Calculates the client's risk profile to ensure regulatory suitability before mutual fund proposals are generated.
+
+```mermaid
+classDiagram
+    class RiskAssessment {
+        +Long id
+        +Long clientId
+        +AssessmentStatus status
+        +Integer totalScore
+        +ScoreCategory scoreCategory
+        +LocalDateTime completedAt
+        +LocalDateTime createdAt
+    }
+
+    class RiskQuestion {
+        +Long id
+        +String questionText
+        +String rationale
+        +Integer displayOrder
+    }
+
+    class RiskOption {
+        +Long id
+        +String optionLetter
+        +String optionText
+        +Integer points
+    }
+
+    class RiskAnswer {
+        +Long id
+        +LocalDateTime createdAt
+    }
+
+    class ScoreCategory {
+        <<enumeration>>
+        VERY_CONSERVATIVE
+        CONSERVATIVE
+        MODERATE
+        AGGRESSIVE
+        VERY_AGGRESSIVE
+    }
+
+    class AssessmentStatus {
+        <<enumeration>>
+        IN_PROGRESS
+        COMPLETED
+    }
+
+    RiskAssessment "1" *-- "*" RiskAnswer : captures answers
+    RiskQuestion "1" *-- "*" RiskOption : offers choices
+    RiskAnswer "*" --> "1" RiskQuestion : targets
+    RiskAnswer "*" --> "1" RiskOption : selects
+    RiskAnswer "*" --> "1" RiskAssessment : belongs to
+    RiskAssessment --> ScoreCategory : scoreCategory
+    RiskAssessment --> AssessmentStatus : status
+```
+
+---
+
+### 3. Core Sequence Diagrams
+
+#### 3.1 JWT Authentication & RBAC Security Filter Chain
+Illustrates request interception, stateless token verification, role/permission principal construction, and endpoint dispatch.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Frontend Client
+    participant Filter as JwtAuthenticationFilter
+    participant Provider as JwtTokenProvider
+    participant UserDetailsSvc as CustomUserDetailsService
+    participant SecContext as SecurityContextHolder
+    participant Controller as Protected Controller
+    participant DB as PostgreSQL Database
+
+    Client->>Filter: HTTP GET /java-wtc-api/v1/clients (Authorization: Bearer <JWT>)
+    activate Filter
+    Filter->>Filter: Extract token from Authorization header
+
+    alt Token is valid & non-empty
+        Filter->>Provider: validateToken(token)
+        activate Provider
+        Provider-->>Filter: true
+        deactivate Provider
+
+        Filter->>Provider: getEmailFromJwt(token)
+        activate Provider
+        Provider-->>Filter: "admin@wealthtech.com"
+        deactivate Provider
+
+        Filter->>UserDetailsSvc: loadUserByUsername("admin@wealthtech.com")
+        activate UserDetailsSvc
+        UserDetailsSvc->>DB: findByEmail("admin@wealthtech.com")
+        activate DB
+        DB-->>UserDetailsSvc: User (with Role & Permissions)
+        deactivate DB
+        UserDetailsSvc->>UserDetailsSvc: Map Role ("ROLE_ADMIN") & Permissions (GrantedAuthority)
+        UserDetailsSvc-->>Filter: UserDetails (Spring Security User principal)
+        deactivate UserDetailsSvc
+
+        Filter->>SecContext: setAuthentication(UsernamePasswordAuthenticationToken)
+        Filter->>Controller: doFilter(request, response)
+        activate Controller
+        Controller-->>Client: 200 OK (Paginated Client List)
+        deactivate Controller
+    else Token missing or signature invalid
+        Filter-->>Client: 401 Unauthorized (Invalid / Expired Token)
+    end
+    deactivate Filter
+```
+
+#### 3.2 Asynchronous In-Memory PDF Generation & S3 Direct Pre-Signed Retrieval
+Demonstrates non-blocking proposal PDF generation rendered **100% in RAM** via OpenPDF (`ByteArrayOutputStream`), direct persistence to AWS S3 / LocalStack, and time-limited pre-signed URL retrieval with **zero local disk footprint**.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor RM as Relationship Manager (UI)
+    participant Ctrl as PortfolioRecommendationController
+    participant Svc as PortfolioReviewService
+    participant PdfGen as PortfolioPdfGeneratorService
+    participant S3 as S3Service (AWS SDK v2)
+    participant S3Storage as AWS S3 / LocalStack Storage
+    participant Repo as PortfolioRecommendationRepository
+
+    RM->>Ctrl: POST /portfolio-recommendations/{id}/generate-pdf
+    activate Ctrl
+    Ctrl->>Svc: triggerPdfGeneration(id)
+    activate Svc
+    Note over Svc: Spawns async background task (@Async generatePdfAsync)
+    Svc-->>Ctrl: Returns recommendation state immediately (Status: SAVED)
+    Ctrl-->>RM: HTTP 202 Accepted (Recommendation DTO)
+    deactivate Ctrl
+
+    par Asynchronous In-Memory Worker (@Async)
+        Svc->>PdfGen: generateRecommendationPdf(recommendation)
+        activate PdfGen
+        Note over PdfGen: Creates Document(PageSize.A4)<br/>Writes directly to ByteArrayOutputStream<br/>(ZERO local disk writes!)
+        PdfGen->>S3: uploadFile(s3Key, pdfBytes, "application/pdf")
+        activate S3
+        S3->>S3Storage: PutObject(bucket, key, bytes)
+        S3Storage-->>S3: PutObjectResponse (ETag)
+        S3-->>PdfGen: S3 Object Key
+        deactivate S3
+
+        PdfGen->>S3: generatePresignedGetUrl(s3Key, 60 min)
+        activate S3
+        Note over S3: Calculates HMAC-SHA256 signature client-side
+        S3-->>PdfGen: Pre-signed S3 Download URL
+        deactivate S3
+
+        PdfGen-->>Svc: GeneratedPdfResult(s3Key, presignedUrl)
+        deactivate PdfGen
+
+        Svc->>Repo: save(rec.status = PDF_GENERATED, documentS3Key, generatedDocumentUrl)
+        activate Repo
+        Repo-->>Svc: Persisted
+        deactivate Repo
+    and Frontend Polling Loop (every 2.5s)
+        loop Poll until status == PDF_GENERATED
+            RM->>Ctrl: GET /portfolio-recommendations/{id}
+            Ctrl->>Svc: getRecommendation(id)
+            Svc->>S3: generatePresignedGetUrl(documentS3Key)
+            S3-->>Svc: Fresh Pre-signed URL
+            Svc-->>Ctrl: RecommendationResponse (status, generatedDocumentUrl)
+            Ctrl-->>RM: 200 OK (status: SAVED or PDF_GENERATED)
+        end
+    end
+
+    RM->>S3Storage: Direct Download via Pre-signed URL
+    S3Storage-->>RM: Stream PDF Proposal Binary (Direct from S3 to Browser)
+    deactivate Svc
+```
+
+#### 3.3 Master Funds Admin Excel Ingestion & S3 Upsert Pipeline
+Illustrates the administrative workflow for uploading mutual fund universe spreadsheets, streaming through Apache POI, and performing atomic database upserts by ISIN code.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as System Administrator
+    participant Ctrl as AdminMasterFundController
+    participant Svc as MasterFundService
+    participant S3 as S3Service
+    participant Excel as EligibleFundExcelService (Apache POI)
+    participant Repo as EligibleFundRepository
+    participant DB as PostgreSQL Database
+
+    Admin->>Ctrl: POST /admin/master-funds/upload (MultipartFile: master_funds.xlsx)
+    activate Ctrl
+    Ctrl->>Svc: uploadAndImportMasterFunds(file)
+    activate Svc
+
+    Note over Svc: Generate S3 Key: master-funds/{timestamp}_{filename}
+    Svc->>S3: uploadFile(s3Key, fileBytes, contentType)
+    activate S3
+    S3-->>Svc: Upload confirmed
+    S3->>S3: generatePresignedGetUrl(s3Key)
+    S3-->>Svc: presignedDownloadUrl
+    deactivate S3
+
+    Svc->>Excel: parseExcelFile(inputStream)
+    activate Excel
+    Note over Excel: Validates header columns & formats<br/>Extracts ISIN, AMC, Category, Returns, Risk
+    Excel-->>Svc: List<MasterFundRowDto> (parsed rows)
+    deactivate Excel
+
+    loop For each parsed fund row
+        Svc->>Repo: findByIsin(row.getIsin())
+        activate Repo
+        Repo-->>Svc: Optional<EligibleFund>
+        deactivate Repo
+        alt Exists
+            Svc->>Svc: Update fundName, category, assetClass, scoreCategory
+        else New ISIN
+            Svc->>Svc: Build new EligibleFund entity
+        end
+    end
+
+    Svc->>Repo: saveAll(eligibleFunds)
+    activate Repo
+    Repo->>DB: Batch Insert / Update
+    DB-->>Repo: Saved records count
+    Repo-->>Svc: Persisted entities
+    deactivate Repo
+
+    Svc-->>Ctrl: MasterFundUploadResponse (SUCCESS, totalRows, inserted, updated, presignedUrl)
+    deactivate Svc
+    Ctrl-->>Admin: 200 OK (Upload Summary & Audit Details)
+    deactivate Ctrl
+```
+
+#### 3.4 eCAS Electronic Statement Upload Flow
+Captures how client portfolio statements are ingested, stored in S3, and assigned pre-signed download URLs for advisor review.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Advisor as Relationship Manager
+    participant Ctrl as PortfolioReviewController
+    participant S3 as S3Service
+    participant S3Store as AWS S3 / LocalStack
+
+    Advisor->>Ctrl: POST /portfolio-reviews/ecas/upload (file, clientId)
+    activate Ctrl
+    Ctrl->>Ctrl: Sanitize filename & generate key: ecas/{clientId}/{timestamp}_{filename}
+    Ctrl->>S3: uploadFile(s3Key, fileBytes, contentType)
+    activate S3
+    S3->>S3Store: PutObjectRequest
+    S3Store-->>S3: 200 OK
+    deactivate S3
+
+    Ctrl->>S3: generatePresignedGetUrl(s3Key, 60 min)
+    activate S3
+    S3-->>Ctrl: Temporary Pre-Signed GET URL
+    deactivate S3
+
+    Ctrl-->>Advisor: 200 OK (EcasUploadResponse with s3Key & presignedUrl)
+    deactivate Ctrl
+```
+
+---
+
+### 4. State Machine Diagrams
+
+#### 4.1 Recommendation Proposal & PDF Generation State Machine
+Models the lifecycle states of an investment recommendation proposal from draft creation through async rendering to final distribution.
+
+```mermaid
+stateDiagram-v2
+    [*] --> SAVED : POST /portfolio-recommendations (Proposal created with line-item funds)
+
+    SAVED --> SAVED : POST /portfolio-recommendations/{id}/generate-pdf (HTTP 202 Accepted)
+    note right of SAVED
+        Background worker executes @Async:
+        - In-memory OpenPDF compilation (ByteArrayOutputStream)
+        - Direct upload to S3 (recommendations/{id}/recommendation_{id}.pdf)
+        - Pre-signed URL generation (HMAC-SHA256)
+        Frontend polls GET /portfolio-recommendations/{id} every 2.5s
+    end note
+
+    SAVED --> PDF_GENERATED : S3 upload successful & documentS3Key persisted
+    SAVED --> PDF_FAILED : Worker catches exception during rendering or S3 upload
+
+    PDF_FAILED --> SAVED : Relationship Manager clicks Retry (POST /generate-pdf)
+
+    PDF_GENERATED --> [*] : Client downloads PDF directly from S3 (Pre-signed URL)
+```
+
+#### 4.2 Client Account & KYC Compliance Lifecycle
+Models client progression and KYC verification status.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ONBOARDING : RM creates client (POST /clients)
+    
+    state ONBOARDING {
+        [*] --> KYC_PENDING
+        KYC_PENDING --> KYC_REJECTED : KYC documents invalid / discrepancy
+        KYC_REJECTED --> KYC_PENDING : RM re-submits updated documents
+        KYC_PENDING --> KYC_VERIFIED : KYC checks passed
+    }
+
+    ONBOARDING --> ACTIVE : KYC_VERIFIED completed
+    ACTIVE --> INACTIVE : Client deactivates or RM pauses account
+    INACTIVE --> ACTIVE : Account reactivated
+```
+
+---
+
+## NodeJs UML Diagrams
+
+### 1. High-Level Component & Layered Architecture
+
+> [!TIP]
+> **How to view these diagrams comfortably:**
+> - **In-Editor / Browser**: Use browser zoom (`Ctrl` + `+` / `Cmd` + `+`).
+> - **Mermaid Live Editor**: Copy any ````mermaid` block into [mermaid.live](https://mermaid.live) for interactive panning, infinite zoom, and high-resolution SVG/PNG exports.
+> - **Modular Breakdowns**: Section 1 is broken down below into a **Macro 5-Tier Overview** followed by **3 focused Subsystem Diagrams** (Security & Middleware Pipeline, Web & Domain Services, and Data Storage) rendered at large, easily readable font sizes.
+
+#### 1.1 Macro Layered Architecture (Overview)
+A high-level view of the 5 primary architectural tiers in `backend-nodejs`:
+
+```mermaid
+flowchart TD
+    Client["1. Client Tier<br/>(React SPA via Vite / Nginx Reverse Proxy)"]
+    Sec["2. Middleware & Security Gateway Pipeline<br/>(CORS, CookieParser, PinoHttp, SnakeCaseResponse, Authenticate JWT, RequirePermission RBAC)"]
+    Web["3. REST Presentation Layer<br/>(Express Routers: Auth, User, Client, Portfolio Review, Recommendation, Risk)"]
+    Service["4. Business Service Domain & In-Memory Cloud Engines<br/>(AuthService, UserService, ClientService, PortfolioReviewService, S3Service, ExcelJS, PDFKit)"]
+    Storage["5. Persistence & Physical Storage<br/>(Mongoose ODM / MongoDB Atlas or Local Database + AWS S3 / LocalStack)"]
+
+    Client -->|HTTP / REST JSON| Sec
+    Sec -->|Authenticated User Context & Permissions| Web
+    Web -->|DTO Payloads & Async Orchestration| Service
+    Service -->|Mongoose Documents & Direct S3 Buffers| Storage
+```
+
+#### 1.2 Subsystem A: Security & Middleware Request Pipeline
+Illustrates request ingress from the browser through Nginx, cookie/header extraction, JWT cryptographic verification, user & permission hydration from MongoDB, and endpoint permission authorization.
+
+```mermaid
+flowchart LR
+    Client["React UI"] -->|HTTP / Bearer JWT or Cookie| Nginx["Nginx Reverse Proxy"]
+    Nginx --> Cors["cors()"]
+    Cors --> Cookies["cookieParser()"]
+    Cookies --> Snake["snakeCaseResponse (Outbound Interceptor)"]
+    Snake --> AuthMiddleware["authenticate()"]
+
+    subgraph TokenAuth["Token Verification & Hydration"]
+        AuthMiddleware -->|jwt.verify(token, secret)| JwtVerif["JWT Verification Engine"]
+        JwtVerif -->|Query User by ID + Populate Role & Permissions| MongoUser[("MongoDB: users & roles")]
+        MongoUser -->|Assign req.user| ReqUser["req.user Context"]
+    end
+
+    AuthMiddleware --> RequirePerm["requirePermission(codename)"]
+    RequirePerm -->|Authorized| Dispatch["Dispatch to Express Controllers"]
+    RequirePerm -->|403 Forbidden| Err["errorHandler Middleware"]
+```
+
+#### 1.3 Subsystem B: Presentation Controllers & Service Domain Mapping
+Maps each Express router (`/nodejs-wtc-api/v1`) to its controller handlers and backing domain services.
+
+```mermaid
+flowchart LR
+    subgraph Routes["Express Routers (/nodejs-wtc-api/v1)"]
+        AR["/auth (authRoutes)"]
+        UR["/users, /groups, /roles (userRoutes)"]
+        CR["/clients (clientRoutes)"]
+        PR["/portfolio-reviews, /portfolio-recommendations (portfolioRoutes)"]
+        EF["/eligible-funds, /admin/master-funds (portfolioRoutes)"]
+        RR["/risk-assessments (riskRoutes)"]
+    end
+
+    subgraph Controllers["Controller Handlers"]
+        AC["authController"]
+        UC["userController"]
+        CC["clientController"]
+        PC["portfolioController"]
+        RC["riskController"]
+    end
+
+    subgraph Services["Domain Services & Cloud Processors"]
+        AS["authService"]
+        US["userService / groupService / roleService"]
+        CS["clientService"]
+        CES["clientExcelService (ExcelJS)"]
+        PRS["portfolioReviewService"]
+        PDS["portfolioPdfService (PDFKit in-RAM)"]
+        EFS["eligibleFundExcelService (ExcelJS)"]
+        RAS["raService"]
+    end
+
+    AR --> AC --> AS
+    UR --> UC --> US
+    CR --> CC --> CS & CES
+    PR --> PC --> PRS & PDS
+    EF --> PC --> EFS
+    RR --> RC --> RAS
+```
+
+#### 1.4 Subsystem C: Persistence, AWS S3 & Physical Storage Tier
+Illustrates the routing of schema-validated JSON documents to MongoDB and in-memory binary streams to AWS S3 / LocalStack with zero container disk footprints.
+
+```mermaid
+flowchart LR
+    subgraph Services["Application Domain Services"]
+        CS["clientService"]
+        CES["clientExcelService"]
+        PRS["portfolioReviewService"]
+        PDS["portfolioPdfService"]
+        EFS["eligibleFundExcelService"]
+    end
+
+    subgraph Models["Mongoose Models & Schemas"]
+        CM["Client / ClientProfile"]
+        PRM["PortfolioReview (Embedded Entries)"]
+        PRCM["PortfolioRecommendation (Embedded Fund Items)"]
+        EFM["EligibleFund"]
+        UM["User / Role / Group / Permission"]
+        RAM["RiskAssessment / RiskQuestion"]
+    end
+
+    subgraph CloudInfra["AWS S3 / LocalStack Integration"]
+        S3S["S3Service (@aws-sdk/client-s3)"]
+        Presigner["@aws-sdk/s3-request-presigner (getSignedUrl)"]
+    end
+
+    subgraph Storage["Physical Storage"]
+        MongoDB[("MongoDB Database<br/>(BSON Documents & Embedded Subdocuments)")]
+        S3Bucket[("AWS S3 / LocalStack Bucket<br/>(PDFs, Statements, Excel Snapshots)")]
+    end
+
+    CS --> CM
+    CES --> S3S
+    PRS --> PRM & PRCM & EFM & S3S
+    PDS --> S3S
+    EFS --> EFM & S3S
+    S3S --> Presigner
+
+    CM & PRM & PRCM & EFM & UM & RAM -->|Mongoose Driver / TCP 27017| MongoDB
+    S3S -->|PutObjectCommand / GetObjectCommand| S3Bucket
+```
+
+#### 1.5 Tier Responsibilities & Structural Summary
+| Architectural Tier | Primary Components & Files | Core Responsibilities |
+|---|---|---|
+| **Client & Ingress** | React Frontend, Vite Dev Server / Nginx | Static asset delivery, reverse proxying to `/nodejs-wtc-api/v1/*`. |
+| **Security & Middleware** | `authMiddleware.ts`, `snakeCaseResponse.ts`, `errorHandler.ts` | JWT cookie/bearer validation, RBAC enforcement, snake_case wire serialization, centralized logging. |
+| **REST Presentation** | `modules.*.controllers.*`, Express Routers | Express route binding, async error wrapping via `asyncHandler`, HTTP request/response mapping. |
+| **Domain Services** | `modules.*.services.*` | Core business rules, validation, scoring calculations, transaction emulation. |
+| **Async & Document Engines** | `portfolioPdfService.ts`, `eligibleFundExcelService.ts`, `clientExcelService.ts` | 100% in-memory vector PDF generation (`PDFKit`), Excel parsing & generation (`ExcelJS`) with zero local disk writes. |
+| **Cloud & Object Storage** | `common.services.s3Service.ts`, AWS SDK v3 | Direct RAM buffer uploads to S3, time-limited HMAC-SHA256 pre-signed download URLs, LocalStack auto-bucket provisioning. |
+| **Data Persistence** | `modules.*.models.*`, Mongoose ODM | Schema enforcement, embedded subdocuments, compound indexing, lifecycle timestamps, `toJSON` sanitization. |
+
+---
+
+### 2. Domain Model & Class Diagrams (Source-Verified for Mongoose & TypeScript)
+
+#### 2.1 User Management & Role-Based Access Control (RBAC)
+Models organizational departments (`Group`), granular security capabilities (`Permission`), and composite roles (`Role`) assigned to users.
+
+```mermaid
+classDiagram
+    class User {
+        +ObjectId _id
+        +String email
+        +String password
+        +String fullName
+        +ObjectId group
+        +ObjectId role
+        +ObjectId reportsTo
+        +List~String~ languages
+        +Date createdAt
+        +Date updatedAt
+        +comparePassword(candidate) Promise~Boolean~
+    }
+
+    class Group {
+        +ObjectId _id
+        +String name
+        +String description
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class Role {
+        +ObjectId _id
+        +String name
+        +String description
+        +ObjectId group
+        +List~ObjectId~ permissions
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class Permission {
+        +ObjectId _id
+        +String codename
+        +String name
+        +String contentType
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    User "*" --> "1" Group : belongs to (ref)
+    User "*" --> "1" Role : assigned (ref)
+    User "*" --> "0..1" User : reports to (ref)
+    Role "*" --> "1" Group : categorized under (ref)
+    Role "*" --> "*" Permission : references permissions
+```
+
+#### 2.2 Customer & KYC Management
+Customer management separates frequently searched client identity attributes from detailed compliance KYC address information using Mongoose 1-to-1 document references (`Client` $\rightarrow$ `ClientProfile`).
+
+```mermaid
+classDiagram
+    class Client {
+        +ObjectId _id
+        +String firstName
+        +String lastName
+        +String fullName
+        +String email
+        +String phone
+        +String pan
+        +Date dateOfBirth
+        +Gender gender
+        +ClientStatus status
+        +ObjectId relationshipManager
+        +Date signUpDate
+        +ObjectId createdBy
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class ClientProfile {
+        +ObjectId _id
+        +ObjectId client
+        +KycStatus kycStatus
+        +ClientStatus clientStatus
+        +String addressLine
+        +String city
+        +String state
+        +String pincode
+        +String country
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class ClientStatus {
+        <<enumeration>>
+        ONBOARDING
+        ACTIVE
+        INACTIVE
+    }
+
+    class KycStatus {
+        <<enumeration>>
+        PENDING
+        VERIFIED
+        REJECTED
+    }
+
+    class Gender {
+        <<enumeration>>
+        MALE
+        FEMALE
+        OTHER
+    }
+
+    class User {
+        +ObjectId _id
+        +String email
+        +String fullName
+    }
+
+    Client "1" <-- "1" ClientProfile : references client (1-to-1)
+    User "1" <-- "*" Client : managed by RM (ref)
+    Client --> ClientStatus : status
+    Client --> Gender : gender
+    ClientProfile --> KycStatus : kycStatus
+    ClientProfile --> ClientStatus : clientStatus
+```
+
+#### 2.3 Portfolio Review, Holdings & Recommendation Proposals
+Illustrates the MongoDB document architecture: holding entries (`IPortfolioEntry`) are **embedded subdocuments** within `PortfolioReview`, and proposed fund items (`IRecommendationFundItem`) are **embedded subdocuments** within `PortfolioRecommendation`.
+
+```mermaid
+classDiagram
+    class PortfolioReview {
+        +ObjectId _id
+        +ObjectId client
+        +ReviewStatus status
+        +Number totalInvested
+        +Number totalCurrentValue
+        +Number totalGain
+        +Number gainPercentage
+        +Number cagr
+        +String note
+        +String ecasFileKey
+        +List~IPortfolioEntry~ entries
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class IPortfolioEntry {
+        <<embedded subdocument>>
+        +ObjectId _id
+        +String fundName
+        +String isin
+        +Number units
+        +Number purchaseNav
+        +Number currentNav
+        +Number investedAmount
+        +Number currentValue
+        +Number absReturnPct
+        +Number gain
+        +Number cagrPct
+        +Number holdingDays
+        +EntryAction action
+    }
+
+    class PortfolioRecommendation {
+        +ObjectId _id
+        +ObjectId client
+        +ObjectId portfolioReview
+        +RecommendationFlowType flowType
+        +RecommendationStatus status
+        +ScoreCategoryCode investorCategory
+        +String generatedDocumentUrl
+        +String documentS3Key
+        +List~IRecommendationFundItem~ funds
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class IRecommendationFundItem {
+        <<embedded subdocument>>
+        +ObjectId _id
+        +ObjectId eligibleFund
+        +Number amount
+        +ObjectId replacesEntryId
+        +Number displayOrder
+    }
+
+    class EligibleFund {
+        +ObjectId _id
+        +String fundName
+        +String isin
+        +String fundSubCategory
+        +String assetClass
+        +String instrumentType
+        +ScoreCategoryCode scoreCategory
+        +Boolean isActive
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class ReviewStatus {
+        <<enumeration>>
+        PENDING
+        COMPLETED
+        FAILED
+    }
+
+    class EntryAction {
+        <<enumeration>>
+        HOLD
+        SELL
+    }
+
+    class RecommendationFlowType {
+        <<enumeration>>
+        REPLACE_FUNDS
+        NEW_PORTFOLIO
+    }
+
+    class RecommendationStatus {
+        <<enumeration>>
+        SAVED
+        PDF_GENERATED
+        PDF_FAILED
+    }
+
+    class ScoreCategoryCode {
+        <<enumeration>>
+        very_conservative
+        conservative
+        moderate
+        aggressive
+        very_aggressive
+    }
+
+    PortfolioReview "1" *-- "*" IPortfolioEntry : embeds entries subdocs
+    PortfolioReview "0..1" <-- "1" PortfolioRecommendation : references (optional)
+    PortfolioRecommendation "1" *-- "*" IRecommendationFundItem : embeds funds subdocs
+    IRecommendationFundItem "*" --> "1" EligibleFund : references fund
+    IRecommendationFundItem "*" --> "0..1" IPortfolioEntry : references replaced holding
+    IPortfolioEntry --> EntryAction : action
+    PortfolioRecommendation --> RecommendationFlowType : flowType
+    PortfolioRecommendation --> RecommendationStatus : status
+    PortfolioRecommendation --> ScoreCategoryCode : investorCategory
+    PortfolioReview --> ReviewStatus : status
+```
+
+#### 2.4 Risk Assessment & Suitability Engine
+Calculates the investor's regulatory suitability profile. Questions embed option choices, and assessments embed recorded client answers.
+
+```mermaid
+classDiagram
+    class RiskAssessment {
+        +ObjectId _id
+        +ObjectId client
+        +AssessmentStatus status
+        +List~IRiskAnswer~ answers
+        +Number totalScore
+        +IScoreCategoryInfo scoreCategory
+        +Date completedAt
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class IRiskAnswer {
+        <<embedded subdocument>>
+        +ObjectId question
+        +ObjectId selectedOption
+        +Number points
+        +Date answeredAt
+    }
+
+    class RiskQuestion {
+        +ObjectId _id
+        +String questionText
+        +String rationale
+        +Number displayOrder
+        +List~IRiskOption~ options
+        +Date createdAt
+        +Date updatedAt
+    }
+
+    class IRiskOption {
+        <<embedded subdocument>>
+        +ObjectId _id
+        +String optionLetter
+        +String optionText
+        +Number points
+    }
+
+    class AssessmentStatus {
+        <<enumeration>>
+        IN_PROGRESS
+        COMPLETED
+    }
+
+    class ScoreCategoryCode {
+        <<enumeration>>
+        very_conservative
+        conservative
+        moderate
+        aggressive
+        very_aggressive
+    }
+
+    RiskAssessment "1" *-- "*" IRiskAnswer : embeds answers subdocs
+    RiskQuestion "1" *-- "*" IRiskOption : embeds options subdocs
+    IRiskAnswer "*" --> "1" RiskQuestion : references question
+    IRiskAnswer "*" --> "1" IRiskOption : references selectedOption
+    RiskAssessment --> AssessmentStatus : status
+```
+
+---
+
+### 3. Core Sequence Diagrams
+
+#### 3.1 JWT Authentication & RBAC Middleware Pipeline
+Illustrates request interception, stateless token verification, user & permission hydration, and permission checking in the Node.js Express chain.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Frontend Client
+    participant Express as Express Pipeline
+    participant AuthMW as authMiddleware (authenticate)
+    participant JwtUtil as jwt (jsonwebtoken)
+    participant UserMod as User Model (Mongoose)
+    participant PermMW as requirePermission("client:read")
+    participant Ctrl as clientController
+    participant SnakeMW as snakeCaseResponse
+
+    Client->>Express: HTTP GET /nodejs-wtc-api/v1/clients (Cookie: accessToken OR Bearer header)
+    activate Express
+    Express->>AuthMW: authenticate(req, res, next)
+    activate AuthMW
+
+    AuthMW->>JwtUtil: verify(token, config.jwtSecret)
+    activate JwtUtil
+    JwtUtil-->>AuthMW: decoded payload ({ email: "admin@wealthtech.com" })
+    deactivate JwtUtil
+
+    AuthMW->>UserMod: findOne({ email }).populate("group").populate({ path: "role", populate: "permissions" })
+    activate UserMod
+    UserMod-->>AuthMW: userDoc (hydrated with Role and all Permission codenames)
+    deactivate UserMod
+
+    AuthMW->>AuthMW: Attach userDoc to req.user
+    AuthMW->>PermMW: next() -> requirePermission("client:read")
+    deactivate AuthMW
+    activate PermMW
+
+    alt req.user has "client:read" OR role is "ADMIN"
+        PermMW->>Ctrl: next() -> getClients(req, res)
+        activate Ctrl
+        Ctrl-->>SnakeMW: res.status(200).json(clientsData)
+        deactivate Ctrl
+        activate SnakeMW
+        SnakeMW->>SnakeMW: transformKeysToSnakeCase(body)
+        SnakeMW-->>Client: 200 OK (snake_case JSON response)
+        deactivate SnakeMW
+    else Lacks permission
+        PermMW-->>Client: 403 Forbidden (Insufficient permissions)
+    end
+    deactivate PermMW
+    deactivate Express
+```
+
+#### 3.2 Asynchronous In-Memory PDF Generation & S3 Direct Pre-Signed Retrieval
+Demonstrates non-blocking proposal PDF generation rendered **100% in RAM** via `PDFKit` (`Buffer.concat`), direct persistence to AWS S3 / LocalStack, and time-limited pre-signed URL retrieval with **zero local disk footprint**.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor RM as Relationship Manager (UI)
+    participant Ctrl as portfolioController
+    participant Svc as portfolioReviewService
+    participant PdfGen as portfolioPdfService (PDFKit in-memory)
+    participant S3 as s3Service (@aws-sdk/client-s3)
+    participant S3Storage as AWS S3 / LocalStack Bucket
+    participant Mongo as MongoDB (PortfolioRecommendation)
+
+    RM->>Ctrl: POST /portfolio-recommendations/:id/generate-pdf
+    activate Ctrl
+    Ctrl->>Svc: triggerPdfGeneration(recommendationId)
+    activate Svc
+    Note over Svc: Spawns non-blocking async worker (this.generatePdfAsync)
+    Svc-->>Ctrl: Returns current recommendation DTO immediately (Status: SAVED)
+    Ctrl-->>RM: HTTP 202 Accepted (Recommendation DTO)
+    deactivate Ctrl
+
+    par Asynchronous In-Memory Worker (generatePdfAsync)
+        Svc->>PdfGen: generateRecommendationPdf(recommendation)
+        activate PdfGen
+        Note over PdfGen: Creates new PDFDocument()<br/>Buffers stream chunks via doc.on("data", chunk)<br/>(ZERO local disk writes!)
+        PdfGen->>S3: uploadFile({ key: s3Key, buffer: pdfBuffer, contentType: "application/pdf" })
+        activate S3
+        S3->>S3Storage: PutObjectCommand(Bucket, Key, Body)
+        S3Storage-->>S3: PutObjectCommandOutput (ETag)
+        S3-->>PdfGen: { key, bucket }
+        deactivate S3
+
+        PdfGen->>S3: getPresignedDownloadUrl(s3Key, 900s)
+        activate S3
+        Note over S3: Calculates HMAC-SHA256 signature client-side
+        S3-->>PdfGen: 15-minute Pre-signed Download URL
+        deactivate S3
+
+        PdfGen-->>Svc: { s3Key, presignedUrl }
+        deactivate PdfGen
+
+        Svc->>Mongo: findByIdAndUpdate(id, { status: "PDF_GENERATED", documentS3Key, generatedDocumentUrl })
+        activate Mongo
+        Mongo-->>Svc: Persisted
+        deactivate Mongo
+    and Frontend Polling Loop (every 2.5s)
+        loop Poll until status == PDF_GENERATED
+            RM->>Ctrl: GET /portfolio-recommendations/:id
+            Ctrl->>Svc: getRecommendation(id)
+            Svc->>S3: getPresignedDownloadUrl(rec.documentS3Key)
+            S3-->>Svc: Fresh Pre-signed URL (15-min TTL)
+            Svc-->>Ctrl: Recommendation DTO (status, generated_document_url)
+            Ctrl-->>RM: 200 OK (status: SAVED or PDF_GENERATED)
+        end
+    end
+
+    RM->>S3Storage: Direct Download via Pre-signed URL
+    S3Storage-->>RM: Stream PDF Proposal Binary (Direct from S3 to Browser)
+    deactivate Svc
+```
+
+#### 3.3 Master Funds Admin Excel Ingestion & S3 Upsert Pipeline
+Illustrates the administrative workflow for uploading mutual fund universe spreadsheets, streaming through ExcelJS in RAM, and performing atomic database upserts by ISIN code.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as System Administrator
+    participant Ctrl as portfolioController
+    participant Svc as eligibleFundExcelService
+    participant S3 as s3Service
+    participant Excel as ExcelJS Engine
+    participant Model as EligibleFund Model
+    participant Mongo as MongoDB
+
+    Admin->>Ctrl: POST /eligible-funds/upload (Multipart: master_funds.xlsx)
+    activate Ctrl
+    Ctrl->>Svc: processUpload(req.file.buffer, originalFilename)
+    activate Svc
+
+    Note over Svc: Generate S3 Key: master-funds/{timestamp}_{filename}
+    Svc->>S3: uploadFile({ key: s3Key, buffer, contentType })
+    activate S3
+    S3-->>Svc: S3 upload confirmed
+    S3->>S3: getPresignedDownloadUrl(s3Key, 900s)
+    S3-->>Svc: presignedDownloadUrl
+    deactivate S3
+
+    Svc->>Excel: workbook.xlsx.load(buffer)
+    activate Excel
+    Note over Excel: Dynamically scans row 1 headers<br/>Detects ISIN, Fund Name, Category, Asset Class
+    Excel-->>Svc: Parsed fund rows array
+    deactivate Excel
+
+    loop For each parsed fund row
+        Svc->>Model: updateOne({ isin: fund.isin }, { $set: fund }, { upsert: true })
+        activate Model
+        Model->>Mongo: Atomic Upsert (Preserves existing _id)
+        Mongo-->>Model: { matchedCount, modifiedCount, upsertedCount }
+        Model-->>Svc: Result (inserted vs updated counter)
+        deactivate Model
+    end
+
+    Svc-->>Ctrl: MasterFundUploadResponseDto (SUCCESS, totalRecords, insertedRecords, updatedRecords, fileUrl)
+    deactivate Svc
+    Ctrl-->>Admin: 200 OK (Upload Summary & Audit Details)
+    deactivate Ctrl
+```
+
+#### 3.4 eCAS Electronic Statement Upload Flow
+Captures how client portfolio statements are ingested into memory, stored in S3, and assigned pre-signed download URLs for advisor review.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Advisor as Relationship Manager
+    participant Ctrl as portfolioController
+    participant Svc as portfolioReviewService
+    participant S3 as s3Service
+    participant S3Store as AWS S3 / LocalStack Bucket
+
+    Advisor->>Ctrl: POST /portfolio-reviews/ecas/upload (file, clientId)
+    activate Ctrl
+    Ctrl->>Svc: uploadEcasStatement({ buffer, originalFilename, clientId, contentType })
+    activate Svc
+    Note over Svc: Sanitize filename & generate key: ecas/{clientId}/{timestamp}_{filename}
+    Svc->>S3: uploadFile({ key: s3Key, buffer, contentType })
+    activate S3
+    S3->>S3Store: PutObjectCommand
+    S3Store-->>S3: 200 OK
+    deactivate S3
+
+    Svc->>S3: getPresignedDownloadUrl(s3Key, 900s)
+    activate S3
+    S3-->>Svc: Temporary Pre-Signed GET URL
+    deactivate S3
+
+    Svc-->>Ctrl: EcasUploadResponseDto (SUCCESS, clientId, filename, s3Key, fileUrl)
+    deactivate Svc
+    Ctrl-->>Advisor: 200 OK (eCAS Upload Summary)
+    deactivate Ctrl
+```
+
+#### 3.5 Bulk Client Upload & Template S3 Sync Flow
+Illustrates client spreadsheet onboarding, S3 raw file archival, async background parsing, and template S3 synchronization.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor RM as Relationship Manager
+    participant Ctrl as clientController
+    participant CSvc as clientService
+    participant CESvc as clientExcelService
+    participant S3 as s3Service
+    participant S3Store as AWS S3 / LocalStack Bucket
+    participant Mongo as MongoDB (Client & ClientProfile)
+
+    alt Download Spreadsheet Template
+        RM->>Ctrl: GET /clients/bulk-template (?format=url)
+        activate Ctrl
+        Ctrl->>CESvc: generateClientBulkTemplate()
+        activate CESvc
+        CESvc-->>Ctrl: ExcelJS Buffer
+        deactivate CESvc
+        Ctrl->>S3: uploadFile("templates/clients_bulk_template.xlsx", buffer)
+        Ctrl->>S3: getPresignedDownloadUrl("templates/clients_bulk_template.xlsx")
+        S3-->>Ctrl: presignedUrl
+        Ctrl-->>RM: 200 OK ({ s3Key, fileUrl } OR attachment stream)
+        deactivate Ctrl
+    else Upload Spreadsheet for Batch Ingestion
+        RM->>Ctrl: POST /clients/bulk-upload (file)
+        activate Ctrl
+        Ctrl->>S3: uploadFile("client-uploads/{timestamp}_{filename}", buffer)
+        Ctrl->>S3: getPresignedDownloadUrl(s3Key)
+        S3-->>Ctrl: presignedUrl
+        Ctrl->>CSvc: processBulkUploadAsync(buffer, currentUserId)
+        Ctrl-->>RM: HTTP 202 Accepted ({ status: "PROCESSING", s3Key, fileUrl })
+        deactivate Ctrl
+
+        Note over CSvc: Async background processing:<br/>- Parses rows via ExcelJS<br/>- Skips duplicate PAN / Email / Phone<br/>- Inserts Client & ClientProfile atomically
+        CSvc->>Mongo: Client.create() & ClientProfile.create()
+    end
+```
+
+---
+
+### 4. State Machine Diagrams
+
+#### 4.1 Recommendation Proposal & PDF Generation State Machine
+Models the lifecycle states of an investment recommendation proposal from draft creation through async rendering to final distribution.
+
+```mermaid
+stateDiagram-v2
+    [*] --> SAVED : POST /portfolio-recommendations (Proposal created with line-item funds)
+
+    SAVED --> SAVED : POST /portfolio-recommendations/:id/generate-pdf (HTTP 202 Accepted)
+    note right of SAVED
+        Background worker executes async:
+        - In-memory PDFKit compilation (Buffer.concat)
+        - Direct upload to S3 (recommendations/:id/proposal_:ts.pdf)
+        - Pre-signed URL generation (HMAC-SHA256, 15 min TTL)
+        Frontend polls GET /portfolio-recommendations/:id every 2.5s
+    end note
+
+    SAVED --> PDF_GENERATED : S3 upload successful & documentS3Key persisted
+    SAVED --> PDF_FAILED : Worker catches exception during rendering or S3 upload
+
+    PDF_FAILED --> SAVED : Relationship Manager clicks Retry (POST /generate-pdf)
+
+    PDF_GENERATED --> [*] : Client downloads PDF directly from S3 (Pre-signed URL)
+```
+
+#### 4.2 Client Account & KYC Compliance Lifecycle
+Models client progression and KYC verification status.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ONBOARDING : RM creates client (POST /clients)
+    
+    state ONBOARDING {
+        [*] --> KYC_PENDING
+        KYC_PENDING --> KYC_REJECTED : KYC documents invalid / discrepancy
+        KYC_REJECTED --> KYC_PENDING : RM re-submits updated documents
+        KYC_PENDING --> KYC_VERIFIED : Compliance verification passed
+    }
+
+    ONBOARDING --> ACTIVE : KYC_VERIFIED completed
+    ACTIVE --> INACTIVE : Client deactivates or RM pauses account
+    INACTIVE --> ACTIVE : Account reactivated
+```
