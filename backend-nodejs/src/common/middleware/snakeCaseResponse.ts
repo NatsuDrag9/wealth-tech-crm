@@ -7,33 +7,55 @@ const camelToSnake = (str: string): string =>
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .toLowerCase();
 
-export const transformKeysToSnakeCase = (data: unknown): unknown => {
-  if (Array.isArray(data)) {
-    return data.map(transformKeysToSnakeCase);
+export const transformKeysToSnakeCase = (
+  data: unknown,
+  seen = new WeakSet<object>()
+): unknown => {
+  let target = data;
+
+  // If a Mongoose Document instance was passed, convert to plain JS object first
+  if (
+    target !== null &&
+    typeof target === 'object' &&
+    typeof (target as { toObject?: () => unknown }).toObject === 'function'
+  ) {
+    target = (target as { toObject: () => unknown }).toObject();
+  }
+
+  // Prevent infinite recursion on circular references
+  if (target !== null && typeof target === 'object') {
+    if (seen.has(target as object)) {
+      return null;
+    }
+    seen.add(target as object);
+  }
+
+  if (Array.isArray(target)) {
+    return target.map((item) => transformKeysToSnakeCase(item, seen));
   }
 
   // Preserve null, primitives, Dates, Buffers, and MongoDB ObjectIds
   if (
-    data !== null &&
-    typeof data === 'object' &&
-    !(data instanceof Date) &&
-    !(data instanceof mongoose.Types.ObjectId) &&
-    !Buffer.isBuffer(data)
+    target !== null &&
+    typeof target === 'object' &&
+    !(target instanceof Date) &&
+    !(target instanceof mongoose.Types.ObjectId) &&
+    !Buffer.isBuffer(target)
   ) {
-    const record = data as Record<string, unknown>;
+    const record = target as Record<string, unknown>;
     const transformed: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(record)) {
-      // Don't modify private Mongoose fields like __v or internal symbols
-      if (key.startsWith('__')) {
+      // Don't modify private Mongoose fields or internal symbols
+      if (key.startsWith('__') || key.startsWith('$')) {
         continue;
       }
-      transformed[camelToSnake(key)] = transformKeysToSnakeCase(value);
+      transformed[camelToSnake(key)] = transformKeysToSnakeCase(value, seen);
     }
     return transformed;
   }
 
-  return data;
+  return target;
 };
 
 export const snakeCaseResponse = (

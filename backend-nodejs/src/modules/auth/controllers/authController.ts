@@ -54,21 +54,22 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     });
 
     // Extract resolved permission codenames
-    const role = user.role as unknown as PopulatedRole;
-    const permissions = role?.permissions?.map((p) => p.codename) || [];
+    const roleDoc = user.role as unknown as PopulatedRole;
+    const roleName = roleDoc?.name || 'ADMIN';
+    const permissions: string[] = roleDoc?.permissions?.map((p) => p.codename) || [];
 
     logger.info({ userId: user._id, email: user.email }, 'User logged in successfully');
 
     return res.status(200).json({
         accessToken,
         tokenType: 'Bearer',
+        role: roleName,
+        permissions,
         user: {
-            id: user._id,
+            id: user._id.toString(),
             email: user.email,
             fullName: user.fullName,
-            group: user.group,
-            role: user.role,
-            permissions,
+            role: roleName,
         },
     });
 });
