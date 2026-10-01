@@ -68,9 +68,9 @@ public class AdminRoleSeeder implements CommandLineRunner {
         log.info("Assigned {} platform permissions to ADMIN role", allPermissions.size());
 
         // 4. Ensure default administrator user exists
-        if (userRepository.findByEmail("admin@wealthtech.crm").isEmpty()) {
+        if (userRepository.findByEmail("admin@wealthtech.com").isEmpty()) {
             User adminUser = User.builder()
-                    .email("admin@wealthtech.crm")
+                    .email("admin@wealthtech.com")
                     .password(passwordEncoder.encode("Admin@123"))
                     .firstName("System")
                     .lastName("Administrator")
@@ -81,7 +81,7 @@ public class AdminRoleSeeder implements CommandLineRunner {
                     .build();
 
             userRepository.save(adminUser);
-            log.info("Bootstrapped default system administrator: admin@wealthtech.crm");
+            log.info("Bootstrapped default system administrator: admin@wealthtech.com");
         }
     }
 }
