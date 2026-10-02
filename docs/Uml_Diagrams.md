@@ -23,10 +23,10 @@ flowchart TD
     Service["4. Business Service Domain & Infrastructure<br/>(Auth, RBAC, Client, PortfolioReview, S3Service, POI Ingestion, OpenPDF)"]
     Storage["5. Persistence & Physical Storage<br/>(Spring Data JPA / PostgreSQL Database + AWS S3 / LocalStack)"]
 
-    Client -->|HTTP / REST JSON| Sec
-    Sec -->|Authenticated Principal & Authorities| Web
-    Web -->|DTO Ingestion & Orchestration| Service
-    Service -->|Entities & Object Streams| Storage
+    Client -->|"HTTP / REST JSON"| Sec
+    Sec -->|"Authenticated Principal and Authorities"| Web
+    Web -->|"DTO Ingestion and Orchestration"| Service
+    Service -->|"Entities and Object Streams"| Storage
 ```
 
 #### 1.2 Subsystem A: Security & Authentication Request Pipeline
@@ -34,17 +34,17 @@ Illustrates request ingress from the browser through Nginx, CORS, JWT extraction
 
 ```mermaid
 flowchart LR
-    Client["React UI"] -->|HTTP / Bearer JWT| Nginx["Nginx Reverse Proxy"]
+    Client["React UI"] -->|"HTTP / Bearer JWT"| Nginx["Nginx Reverse Proxy"]
     Nginx --> Cors["CorsFilter"]
     Cors --> JwtFilter["JwtAuthenticationFilter"]
     
-    subgraph TokenAuth["Token Verification & Principal Loading"]
-        JwtFilter -->|Validate Signature| Provider["JwtTokenProvider"]
-        JwtFilter -->|Load User & Permissions| UDS["CustomUserDetailsService"]
-        UDS -->|Query User + Role + 49 Permissions| DB[("PostgreSQL")]
+    subgraph TokenAuth["Token Verification and Principal Loading"]
+        JwtFilter -->|"Delegates verification and email extraction"| Provider["JwtTokenProvider"]
+        JwtFilter -->|"Calls loadUserByUsername"| UDS["CustomUserDetailsService"]
+        UDS -->|"Queries User, Role and 49 Permissions"| DB[("PostgreSQL")]
     end
     
-    JwtFilter -->|Set Authentication Token| SecContext["SecurityContextHolder"]
+    JwtFilter -->|"Sets Authentication in SecurityContext"| SecContext["SecurityContextHolder"]
     SecContext --> Dispatch["Dispatch to Protected REST Controllers"]
 ```
 
@@ -115,15 +115,30 @@ flowchart LR
         S3Bucket[("AWS S3 / LocalStack Bucket<br/>(PDFs, Statements, Excel Files)")]
     end
 
-    CS --> CR & S3S
-    PRS --> PRR & RR & EFR & S3S
+    CS --> CR
+    CS --> S3S
+    PRS --> PRR
+    PRS --> RR
+    PRS --> EFR
+    PRS --> S3S
     PDF --> S3S
-    MFS --> EFR & S3S
+    MFS --> EFR
+    MFS --> S3S
     S3S --> Presigner
 
-    CR & PRR & RR & EFR & UR -->|Hibernate ORM / JDBC| Postgres
-    S3S -->|PutObject / GetObject HTTP| S3Bucket
+    CR -->|"Hibernate / JDBC"| Postgres
+    PRR -->|"Hibernate / JDBC"| Postgres
+    RR -->|"Hibernate / JDBC"| Postgres
+    EFR -->|"Hibernate / JDBC"| Postgres
+    UR -->|"Hibernate / JDBC"| Postgres
+    S3S -->|"PutObject / GetObject HTTP"| S3Bucket
 ```
+
+##### S3 Storage Integration Summary:
+* **`ClientService` $\rightarrow$ `S3Service`**: Archives raw client spreadsheets from bulk prospect uploads (`client-uploads/`) to S3 and returns a pre-signed URL for tracking.
+* **`PortfolioReviewService` $\rightarrow$ `S3Service`**: Stores uploaded client electronic CAS statements directly in S3 (`ecas/{clientId}/`) and issues a secure pre-signed download URL.
+* **`PortfolioPdfGeneratorService` $\rightarrow$ `S3Service`**: Compiles recommendation proposal PDFs in-memory (RAM) and uploads the binary to S3 (`recommendations/{id}/`) with zero local disk usage.
+* **`MasterFundService` $\rightarrow$ `S3Service`**: Archives administrator-uploaded master fund spreadsheets (`master-funds/`) to S3 before parsing and upserting into the database.
 
 #### 1.5 Tier Responsibilities & Structural Summary
 | Architectural Tier | Primary Packages & Components | Core Responsibilities |
@@ -186,11 +201,11 @@ classDiagram
         +getAuthority() String
     }
 
-    User "*" --> "0..1" Group : belongs to
-    User "*" --> "0..1" Role : assigned
-    User "*" --> "0..1" User : reports to
-    Role "*" --> "1" Group : categorized under
-    Role "*" -- "*" Permission : grants
+    User "*" --> "0..1" Role : assigned (grants permissions)
+    User "*" --> "0..1" Group : belongs to (department)
+    User "*" --> "0..1" User : reports to (manager)
+    Role "*" --> "1" Group : categorized under (department)
+    Role "*" --> "*" Permission : grants (permissions)
 ```
 
 #### 2.2 Customer & KYC Management
@@ -258,8 +273,8 @@ classDiagram
         +String lastName
     }
 
-    Client "1" *-- "1" ClientProfile : has profile
-    User "1" --> "*" Client : manages (Relationship Manager)
+    Client "1" --> "1" ClientProfile : composition (owns profile)
+    User "1" --> "*" Client : aggregate (manages clients)
     Client --> ClientStatus : status
     Client --> Gender : gender
     ClientProfile --> KycStatus : kycStatus
@@ -358,11 +373,11 @@ classDiagram
         PDF_FAILED
     }
 
-    PortfolioReview "1" *-- "*" PortfolioEntry : contains holdings
-    PortfolioReview "0..1" <-- "1" PortfolioRecommendation : reviews against (optional)
-    PortfolioRecommendation "1" *-- "*" RecommendationFundItem : specifies
-    RecommendationFundItem "*" --> "1" EligibleFund : recommends fund
-    RecommendationFundItem "*" --> "0..1" PortfolioEntry : replaces holding
+    PortfolioReview "1" --> "*" PortfolioEntry : composition (owns holdings)
+    PortfolioRecommendation "1" --> "0..1" PortfolioReview : has-a (reviews against)
+    PortfolioRecommendation "1" --> "*" RecommendationFundItem : composition (owns fund items)
+    RecommendationFundItem "*" --> "1" EligibleFund : has-a (references fund)
+    RecommendationFundItem "*" --> "0..1" PortfolioEntry : has-a (replaces holding)
     PortfolioEntry --> EntryAction : action
     PortfolioRecommendation --> RecommendationFlowType : flowType
     PortfolioRecommendation --> RecommendationStatus : status
@@ -418,11 +433,11 @@ classDiagram
         COMPLETED
     }
 
-    RiskAssessment "1" *-- "*" RiskAnswer : captures answers
-    RiskQuestion "1" *-- "*" RiskOption : offers choices
-    RiskAnswer "*" --> "1" RiskQuestion : targets
-    RiskAnswer "*" --> "1" RiskOption : selects
-    RiskAnswer "*" --> "1" RiskAssessment : belongs to
+    RiskAssessment "1" --> "*" RiskAnswer : composition (owns answers)
+    RiskQuestion "1" --> "*" RiskOption : composition (owns options)
+    RiskAnswer "*" --> "1" RiskQuestion : has-a (references question)
+    RiskAnswer "*" --> "1" RiskOption : has-a (references option)
+    RiskAnswer "*" --> "1" RiskAssessment : has-a (belongs to assessment)
     RiskAssessment --> ScoreCategory : scoreCategory
     RiskAssessment --> AssessmentStatus : status
 ```
@@ -481,8 +496,20 @@ sequenceDiagram
     deactivate Filter
 ```
 
-#### 3.2 Asynchronous In-Memory PDF Generation & S3 Direct Pre-Signed Retrieval
-Demonstrates non-blocking proposal PDF generation rendered **100% in RAM** via OpenPDF (`ByteArrayOutputStream`), direct persistence to AWS S3 / LocalStack, and time-limited pre-signed URL retrieval with **zero local disk footprint**.
+#### 3.2 Two-Step Recommendation Lifecycle: Proposal Creation & Asynchronous PDF Generation
+The recommendation proposal engine intentionally decouples proposal creation from PDF document generation into a high-performance, resilient **two-step process**:
+
+1. **Step 1: Synchronous Proposal Submission & Validation (`POST /portfolio-recommendations`)**:
+   - The advisor selects fund allocations from either the **Replace Funds** (`REPLACE_FUNDS`) or **New Portfolio** (`NEW_PORTFOLIO`) flow.
+   - The backend validates suitability against the investor's latest risk profile, validates that replaced holdings are marked as `SELL` (for `REPLACE_FUNDS`), and enforces business rules.
+   - It persists the `PortfolioRecommendation` with status `SAVED` and creates the child `RecommendationFundItem` line items.
+   - It returns `HTTP 201 Created` immediately with the assigned `{id}` (`generated_document_url = null`).
+2. **Step 2: Asynchronous In-Memory PDF Compilation & S3 Archival (`POST /portfolio-recommendations/{id}/generate-pdf`)**:
+   - The client takes the `{id}` from Step 1 and invokes this endpoint to trigger document rendering.
+   - The controller returns `HTTP 202 Accepted` immediately so the user interface never freezes.
+   - In the background (`@Async`), OpenPDF compiles the branded proposal **100% in RAM** via `ByteArrayOutputStream` (zero local disk footprint), streams the binary directly to AWS S3 / LocalStack under `recommendations/{id}/recommendation_{id}.pdf`, and updates the database status to `PDF_GENERATED`.
+   - The frontend polls `GET /portfolio-recommendations/{id}` every 2.5s until `PDF_GENERATED` is returned, then allows the client to download the PDF directly from S3 using the pre-signed URL.
+   - If rendering or S3 network transfer throws an exception, status transitions to `PDF_FAILED`, and calling this endpoint again acts as the **Retry** mechanism.
 
 ```mermaid
 sequenceDiagram
@@ -495,12 +522,31 @@ sequenceDiagram
     participant S3Storage as AWS S3 / LocalStack Storage
     participant Repo as PortfolioRecommendationRepository
 
+    rect rgb(240, 248, 255)
+    Note over RM,Repo: Step 1: Synchronous Proposal Creation & Validation
+    RM->>Ctrl: POST /portfolio-recommendations (CreateRecommendationRequest)
+    activate Ctrl
+    Ctrl->>Svc: createRecommendation(request)
+    activate Svc
+    Note over Svc: Validates investor category & SELL holdings
+    Svc->>Repo: save(recommendation with status: SAVED, funds)
+    activate Repo
+    Repo-->>Svc: Persisted with generated ID
+    deactivate Repo
+    Svc-->>Ctrl: PortfolioRecommendationResponse (id, status: SAVED, url: null)
+    Ctrl-->>RM: HTTP 201 Created (Assigned {id})
+    deactivate Svc
+    deactivate Ctrl
+    end
+
+    rect rgb(245, 255, 250)
+    Note over RM,Repo: Step 2: Asynchronous In-Memory PDF Compilation & S3 Archival
     RM->>Ctrl: POST /portfolio-recommendations/{id}/generate-pdf
     activate Ctrl
     Ctrl->>Svc: triggerPdfGeneration(id)
     activate Svc
     Note over Svc: Spawns async background task (@Async generatePdfAsync)
-    Svc-->>Ctrl: Returns recommendation state immediately (Status: SAVED)
+    Svc-->>Ctrl: Returns current recommendation state immediately (Status: SAVED)
     Ctrl-->>RM: HTTP 202 Accepted (Recommendation DTO)
     deactivate Ctrl
 
@@ -542,10 +588,41 @@ sequenceDiagram
     RM->>S3Storage: Direct Download via Pre-signed URL
     S3Storage-->>RM: Stream PDF Proposal Binary (Direct from S3 to Browser)
     deactivate Svc
+    end
 ```
 
 #### 3.3 Master Funds Admin Excel Ingestion & S3 Upsert Pipeline
-Illustrates the administrative workflow for uploading mutual fund universe spreadsheets, streaming through Apache POI, and performing atomic database upserts by ISIN code.
+The mutual fund universe pipeline automates the ingestion, validation, and synchronization of eligible investment funds from administrator-uploaded spreadsheets (`.xlsx` / `.xls`). The process combines object storage archival in AWS S3 with atomic database upserts via Spring Data JPA:
+
+1. **Step 1: Admin Upload & Security Ingress (`POST /java-wtc-api/v1/admin/master-funds/upload`)**:
+   - The System Administrator uploads a spreadsheet file via multipart form-data (`file`).
+   - Spring Security enforces role-based access control via `@PreAuthorize("hasRole('ADMIN') or hasAuthority('masterfund:create')")`.
+   - The service validates that the file is non-empty, checks for a valid `.xlsx` / `.xls` extension, and sanitizes the filename to prevent directory traversal.
+
+2. **Step 2: Object Storage Archival & Pre-Signed URL Issuance (AWS S3 / LocalStack)**:
+   - A unique S3 object key is generated: `master-funds/{timestamp}_{safeFilename}`.
+   - The raw spreadsheet binary is uploaded to the S3 bucket via `S3Service.uploadFile(...)`.
+   - A time-limited (60-minute) HMAC-SHA256 pre-signed GET URL is generated for auditing and verification.
+   - *Fault tolerance*: If S3 or LocalStack is unreachable, the service logs a warning and proceeds with database ingestion to ensure platform availability.
+
+3. **Step 3: Streaming In-Memory Spreadsheet Parsing (Apache POI)**:
+   - The file input stream is passed to `EligibleFundExcelService.parseMasterFundsExcel(inputStream)`.
+   - Apache POI validates the workbook schema and required column headers: *Fund Name, ISIN, Score Category, Sub Category, Asset Class, Instrument Type, Active*.
+   - Rows are parsed starting at index 1 (skipping header) into typed `List<MasterFundRowDto>`. If no valid rows exist, a `400 Bad Request` is thrown.
+
+4. **Step 4: Atomic Transactional Upsert by ISIN (`eligible_funds` Table)**:
+   - The operation executes within a `@Transactional` boundary for data consistency.
+   - The service iterates over each `MasterFundRowDto`:
+     - Queries `EligibleFundRepository.findByIsin(row.isin())`.
+     - **Update Branch (ISIN Exists)**: Mutates the existing entity's properties (`fundName`, `fundSubCategory`, `assetClass`, `instrumentType`, `scoreCategory`, `isActive`), saves it, and increments `updatedCount`.
+     - **Insert Branch (New ISIN)**: Builds a new `EligibleFund` entity with Lombok builder, saves it, and increments `insertedCount`.
+
+5. **Step 5: Audit Confirmation & Metrics Response**:
+   - The controller returns `HTTP 200 OK` with a structured `MasterFundUploadResponse` payload containing:
+     - `status`: `"SUCCESS"`
+     - `message`: Summary with exact counts (e.g., `"Master funds processed successfully (15 inserted, 3 updated)"`)
+     - `filename`, `s3Key`, and `presignedUrl` for audit download
+     - Summary counters: `totalRows`, `inserted`, `updated`.
 
 ```mermaid
 sequenceDiagram
@@ -553,53 +630,83 @@ sequenceDiagram
     actor Admin as System Administrator
     participant Ctrl as AdminMasterFundController
     participant Svc as MasterFundService
-    participant S3 as S3Service
+    participant S3 as S3Service (AWS SDK v2)
+    participant S3Storage as AWS S3 / LocalStack Bucket
     participant Excel as EligibleFundExcelService (Apache POI)
     participant Repo as EligibleFundRepository
     participant DB as PostgreSQL Database
 
-    Admin->>Ctrl: POST /admin/master-funds/upload (MultipartFile: master_funds.xlsx)
+    rect rgb(240, 248, 255)
+    Note over Admin,Ctrl: Step 1: Admin Upload & Security Ingress
+    Admin->>Ctrl: POST /java-wtc-api/v1/admin/master-funds/upload (MultipartFile: master_funds.xlsx)
     activate Ctrl
-    Ctrl->>Svc: uploadAndImportMasterFunds(file)
+    Note over Ctrl: @PreAuthorize("hasRole('ADMIN') or hasAuthority('masterfund:create')")
+    Ctrl->>Svc: uploadMasterFunds(file)
     activate Svc
-
-    Note over Svc: Generate S3 Key: master-funds/{timestamp}_{filename}
-    Svc->>S3: uploadFile(s3Key, fileBytes, contentType)
-    activate S3
-    S3-->>Svc: Upload confirmed
-    S3->>S3: generatePresignedGetUrl(s3Key)
-    S3-->>Svc: presignedDownloadUrl
-    deactivate S3
-
-    Svc->>Excel: parseExcelFile(inputStream)
-    activate Excel
-    Note over Excel: Validates header columns & formats<br/>Extracts ISIN, AMC, Category, Returns, Risk
-    Excel-->>Svc: List<MasterFundRowDto> (parsed rows)
-    deactivate Excel
-
-    loop For each parsed fund row
-        Svc->>Repo: findByIsin(row.getIsin())
-        activate Repo
-        Repo-->>Svc: Optional<EligibleFund>
-        deactivate Repo
-        alt Exists
-            Svc->>Svc: Update fundName, category, assetClass, scoreCategory
-        else New ISIN
-            Svc->>Svc: Build new EligibleFund entity
-        end
+    Note over Svc: Validates extension (.xlsx/.xls) and sanitizes filename
     end
 
-    Svc->>Repo: saveAll(eligibleFunds)
-    activate Repo
-    Repo->>DB: Batch Insert / Update
-    DB-->>Repo: Saved records count
-    Repo-->>Svc: Persisted entities
-    deactivate Repo
+    rect rgb(245, 255, 250)
+    Note over Svc,S3Storage: Step 2: Object Storage Archival & Pre-Signed URL Generation
+    Note over Svc: Generate S3 Key: master-funds/{timestamp}_{safeFilename}
+    Svc->>S3: uploadFile(s3Key, fileBytes, contentType)
+    activate S3
+    S3->>S3Storage: PutObject(bucket, key, bytes)
+    S3Storage-->>S3: PutObjectResponse (ETag)
+    S3-->>Svc: Upload confirmed
+    deactivate S3
 
-    Svc-->>Ctrl: MasterFundUploadResponse (SUCCESS, totalRows, inserted, updated, presignedUrl)
+    Svc->>S3: generatePresignedGetUrl(s3Key)
+    activate S3
+    Note over S3: Calculates HMAC-SHA256 signature
+    S3-->>Svc: Pre-signed Download URL (60 min)
+    deactivate S3
+    end
+
+    rect rgb(255, 250, 240)
+    Note over Svc,Excel: Step 3: Streaming In-Memory Spreadsheet Parsing
+    Svc->>Excel: parseMasterFundsExcel(file.getInputStream())
+    activate Excel
+    Note over Excel: Apache POI WorkbookFactory.create(is)<br/>Validates headers: Fund Name, ISIN, Score Category, etc.<br/>Maps rows 1..N to DTOs
+    Excel-->>Svc: List<MasterFundRowDto> (parsed rows)
+    deactivate Excel
+    end
+
+    rect rgb(250, 245, 255)
+    Note over Svc,DB: Step 4: Atomic Transactional Upsert by ISIN (@Transactional)
+    loop For each parsed fund row in List<MasterFundRowDto>
+        Svc->>Repo: findByIsin(row.isin())
+        activate Repo
+        Repo->>DB: SELECT * FROM eligible_funds WHERE isin = ?
+        DB-->>Repo: Result (Optional<EligibleFund>)
+        Repo-->>Svc: Optional<EligibleFund>
+        deactivate Repo
+
+        alt Fund ISIN exists in database
+            Note over Svc: Update fundName, subCategory, assetClass, scoreCategory, isActive
+            Svc->>Repo: save(existingFund)
+            activate Repo
+            Repo->>DB: UPDATE eligible_funds SET ...
+            Repo-->>Svc: Persisted entity (updatedCount++)
+            deactivate Repo
+        else New Fund ISIN
+            Note over Svc: Instantiate EligibleFund.builder()...build()
+            Svc->>Repo: save(newFund)
+            activate Repo
+            Repo->>DB: INSERT INTO eligible_funds (...)
+            Repo-->>Svc: Persisted entity (insertedCount++)
+            deactivate Repo
+        end
+    end
+    end
+
+    rect rgb(240, 255, 240)
+    Note over Admin,Ctrl: Step 5: Audit Confirmation & Metrics Response
+    Svc-->>Ctrl: MasterFundUploadResponse (SUCCESS, totalRows, inserted, updated, s3Key, presignedUrl)
     deactivate Svc
-    Ctrl-->>Admin: 200 OK (Upload Summary & Audit Details)
+    Ctrl-->>Admin: HTTP 200 OK (Upload Summary, Counts & Pre-Signed URL)
     deactivate Ctrl
+    end
 ```
 
 #### 3.4 eCAS Electronic Statement Upload Flow
@@ -651,7 +758,7 @@ stateDiagram-v2
         Frontend polls GET /portfolio-recommendations/{id} every 2.5s
     end note
 
-    SAVED --> PDF_GENERATED : S3 upload successful & documentS3Key persisted
+    SAVED --> PDF_GENERATED : S3 upload successful and documentS3Key persisted
     SAVED --> PDF_FAILED : Worker catches exception during rendering or S3 upload
 
     PDF_FAILED --> SAVED : Relationship Manager clicks Retry (POST /generate-pdf)
@@ -676,6 +783,41 @@ stateDiagram-v2
     ONBOARDING --> ACTIVE : KYC_VERIFIED completed
     ACTIVE --> INACTIVE : Client deactivates or RM pauses account
     INACTIVE --> ACTIVE : Account reactivated
+```
+
+---
+
+### 5. Fault Tolerance & Storage Resilience Architecture
+External object storage (AWS S3 / LocalStack) integration is engineered with multi-tier fault tolerance, graceful degradation, and recovery strategies across all ingestion, generation, and retrieval paths:
+
+#### 5.1 Storage Fault-Tolerance Matrix
+| Workflow | Failure Condition | Resilience & Fallback Strategy | Resulting System State |
+|---|---|---|---|
+| **Master Funds Upload** | S3 network timeout or LocalStack unavailable | **Soft Degradation**: Caught with `log.warn` in `MasterFundService.java`. Proceeds with Apache POI spreadsheet streaming and database upserts. | Database updated (`eligible_funds`); `presignedUrl = null`. Zero HTTP 500. |
+| **Bulk Client Upload** | S3 upload failure | **Soft Degradation & Async Decoupling**: Caught with `log.warn` in `ClientController.java`. In-memory byte array is immediately dispatched to `ClientService.java` (`processBulkUploadAsync`). | Batch prospect onboarding continues uninterrupted; zero HTTP 500. |
+| **eCAS Upload** | S3 upload exception | **Non-Fatal Upload**: Exception trapped with `log.warn` in `PortfolioReviewController.java`. Client-side HMAC-SHA256 signature creates URL without network dependency. | Endpoint returns HTTP 200 OK without failing client statement session. |
+| **Proposal PDF Generation** | S3 upload or OpenPDF rendering error | **State Machine Trapping (`PDF_FAILED`)**: Caught in `@Async` worker in `PortfolioReviewService.java`. Persists status as `PDF_FAILED`. | Server thread pool protected. Advisor can click **Retry** (`POST /generate-pdf`). |
+| **Proposal PDF Download** | S3 object missing or bucket outage | **Dual-Tier Fallback**: Handled in `PortfolioRecommendationController.java`. Queries S3 first; if absent, inspects legacy local filesystem (`uploads/recommendations/`), streams binary, and immediately deletes local file. | Client receives PDF document; local disk is purged on the fly. |
+| **Infrastructure Tier** | Target S3 bucket not yet created (cold restart) | **Self-Healing Auto-Provisioning**: `S3Service.java` (`ensureBucketExists()`) catches `NoSuchBucketException` / 404 and creates bucket dynamically via AWS SDK v2. | Subsequent uploads succeed without administrative intervention. |
+
+#### 5.2 Fault-Tolerant Ingestion Pipeline
+Demonstrates how raw file ingestion pipelines maintain zero downtime and uninterrupted database ingestion even during S3 outages:
+
+```mermaid
+flowchart TD
+    Req["File Upload Request<br/>(Master Funds / Bulk Clients / eCAS)"]
+    Ensure["S3Service.ensureBucketExists()<br/>(Auto-creates bucket if missing / 404)"]
+    S3Upload["S3Service.uploadFile()"]
+
+    Req --> Ensure --> S3Upload
+
+    S3Upload -->|Success| S3Ok["S3 Object Key Persisted<br/>+ HMAC-SHA256 Pre-Signed URL"]
+    S3Upload -->|Network / LocalStack Error| S3Err["Exception Trapped & Logged<br/>(log.warn - No 500 Error)"]
+
+    S3Ok --> Ingestion["Core Ingestion Engine<br/>(Apache POI Parse / Async Entity Persist)"]
+    S3Err -->|Graceful Degradation| Ingestion
+
+    Ingestion --> DB[("PostgreSQL Database<br/>(Entities Ingested Successfully)")]
 ```
 
 ---
