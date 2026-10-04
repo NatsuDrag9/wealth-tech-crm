@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "backend-nodejs"
+    metrics_path: "/nodejs-wtc-api/v1/metrics"
+    static_configs:
+      - targets: ["backend-nodejs:5000"]
+
+  - job_name: "backend-java"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["backend-java:8080"]

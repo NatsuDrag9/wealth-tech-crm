@@ -101,14 +101,58 @@ CORS_ORIGIN=https://your-frontend.vercel.app
 
 ---
 
-## 5. Observability & Logging Standards
+## 5. Observability, OpenTelemetry & Logging Pipeline
 
-| Feature | Node.js / Express | Java / Spring Boot |
+The CRM includes a production-grade observability and telemetry pipeline integrated into `docker-compose.yml` to support standard runtime monitoring alongside AI-native RAG and Agentic metrics.
+
+### Observability Standards Matrix
+
+| Capability | Node.js / Express (`backend-nodejs`) | Java / Spring Boot (`backend-java`) |
 | :--- | :--- | :--- |
-| **Application Logger** | `Pino` (structured JSON, high-speed) or `Winston` | `SLF4J` + `Logback` (via Lombok `@Slf4j`) |
-| **HTTP Request Logging** | `pino-http` or `morgan` | `CommonsRequestLoggingFilter` or custom servlet filter |
-| **Centralized Log Aggregation** | Ship stdout JSON $\rightarrow$ **Grafana Loki** or Datadog | Ship stdout JSON $\rightarrow$ **Grafana Loki** or Datadog |
-| **Metrics & Health** | `prom-client` $\rightarrow$ Prometheus / Grafana | `spring-boot-starter-actuator` $\rightarrow$ Prometheus |
+| **Application Logger** | `Pino` (structured JSON, PII-redacted paths) | `SLF4J` + `Logback` (via Lombok `@Slf4j`) |
+| **HTTP Request Logging** | `pino-http` (bypasses `/health` & `/metrics`) | `CommonsRequestLoggingFilter` / Actuator HTTP trace |
+| **Distributed Tracing & Telemetry** | OpenTelemetry SDK instrumentation (`@opentelemetry/sdk-node`) | Micrometer Tracing with OpenTelemetry bridge |
+| **Metrics Scrape Endpoint** | `GET /nodejs-wtc-api/v1/metrics` (`prom-client`) | `GET /actuator/prometheus` (Micrometer Prometheus Registry) |
+| **Log Shipper & Ingestion** | Promtail (`/var/run/docker.sock`) $\rightarrow$ Grafana Loki | Promtail (`/var/run/docker.sock`) $\rightarrow$ Grafana Loki |
+| **Visualization & Dashboards** | Grafana (Auto-provisioned datasources) | Grafana (Auto-provisioned datasources) |
+
+### Configured Running Servers & Services (`docker-compose.yml`)
+
+The following observability servers are configured and runnable via Docker Compose:
+
+1. **Prometheus (`crm-prometheus` on port `9090`)**:
+   - Configuration: `monitoring/prometheus/prometheus.yml`
+   - Scrapes `localhost:9090` (self), `backend-nodejs:5000/nodejs-wtc-api/v1/metrics`, and `backend-java:8080/actuator/prometheus` at 5-second intervals.
+   - Web UI available at: `http://localhost:9090`.
+
+2. **Grafana (`crm-grafana` on port `3001`)**:
+   - Configuration: `monitoring/grafana/provisioning/datasources/datasources.yml`
+   - Pre-configured with Prometheus as default time-series datasource and Loki as centralized log viewer.
+   - Web UI available at: `http://localhost:3001` (Default credentials: `admin` / `admin`).
+
+3. **Loki (`crm-loki` on port `3100`)**:
+   - Configuration: `monitoring/loki/loki-config.yml`
+   - High-efficiency log aggregation engine using TSDB schema and filesystem chunk storage.
+
+4. **Promtail (`crm-promtail`)**:
+   - Configuration: `monitoring/promtail/promtail-config.yml`
+   - Discovers Docker container standard output via host socket `/var/run/docker.sock`, attaches container labels (`container=crm-backend-nodejs`, `container=crm-backend-java`), and ships streams to Loki.
+
+### Custom RAG & Agentic Telemetry Metrics
+
+In addition to default OS and HTTP request duration histograms (`http_request_duration_seconds`), `backend-nodejs/src/common/metrics/metrics.ts` exposes custom AI-native metrics:
+- `rag_retrieval_duration_seconds`: Histogram tracking hybrid search latency across vector and keyword indexes.
+- `rag_similarity_score`: Histogram capturing cosine similarity distribution of retrieved document chunks.
+- `llm_tokens_total`: Counter tracking prompt and completion tokens per model and agent.
+- `agent_tool_calls_total`: Counter recording tool invocations by agent, tool name, and success/error status.
+- `agent_execution_iterations`: Histogram measuring reasoning-action loop iterations per agent goal.
+
+### Running the Monitoring Stack
+
+To start the observability pipeline independently:
+```bash
+docker compose up -d prometheus grafana loki promtail
+```
 
 ---
 

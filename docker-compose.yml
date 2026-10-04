@@ -168,6 +168,81 @@ services:
     networks:
       - crm-network
 
+  # ==========================================
+  # 7. Prometheus (Metrics Scraper & Time-Series DB)
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: crm-prometheus
+    restart: "${RESTART_POLICY:-no}"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 8. Grafana (Unified Visualization Dashboard)
+  # ==========================================
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: crm-grafana
+    restart: "${RESTART_POLICY:-no}"
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 9. Loki (Log Aggregation Engine)
+  # ==========================================
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: crm-loki
+    restart: "${RESTART_POLICY:-no}"
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - crm-network
+
+  # ==========================================
+  # 10. Promtail (Log Shipper)
+  # ==========================================
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: crm-promtail
+    restart: "${RESTART_POLICY:-no}"
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - crm-network
+
 # ==========================================
 # Named Volumes & Networks
 # ==========================================
@@ -176,7 +251,11 @@ volumes:
   mongo_data:
   node_uploads:
   localstack_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 
 networks:
   crm-network:
     driver: bridge
+
