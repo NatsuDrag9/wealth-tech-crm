@@ -46,4 +46,20 @@ springdoc:
     tags-sorter: alpha
     try-it-out-enabled: true
 
-# spring.application.name=crm-backend
+# Spring Boot Actuator & Prometheus Metrics Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: crm-backend-java
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

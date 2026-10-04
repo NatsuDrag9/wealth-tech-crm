@@ -44,9 +44,10 @@ public class SecurityConfig {
                 "/v3/api-docs/**",
                 "/v3/api-docs",
                 "/swagger-ui/**",
-                "/swagger-ui.html"
+                "/swagger-ui.html",
+                "/actuator/**"
             )
-            .permitAll() // Public login/auth and OpenAPI/Swagger endpoints
+            .permitAll() // Public login/auth, OpenAPI/Swagger, and Actuator metrics endpoints
             .anyRequest()
             .authenticated() // Protected endpoints
         )
