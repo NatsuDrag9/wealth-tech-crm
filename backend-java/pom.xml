@@ -102,6 +102,14 @@
 			<version>2.0.3</version>
 		</dependency>
 
+		<!-- Apache PDFBox for parsing RAG PDF documents and extracting text page-by-page -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
+
 		<!-- Apache POI for Excel bulk upload parsing and template generation -->
 		<dependency>
 			<groupId>org.apache.poi</groupId>

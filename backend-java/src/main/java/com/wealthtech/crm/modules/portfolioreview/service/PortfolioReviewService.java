@@ -325,6 +325,7 @@ public class PortfolioReviewService {
             recommendationRepo.save(rec);
 
         } catch (Exception ex) {
+            log.error("Async PDF generation failed for recommendationId: {}", recommendationId, ex);
             recommendationRepo.findById(recommendationId).ifPresent(rec -> {
                 rec.setStatus(RecommendationStatus.PDF_FAILED);
                 recommendationRepo.save(rec);

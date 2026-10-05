@@ -25,6 +25,8 @@ public interface FundDocumentEmbeddingRepository extends JpaRepository<FundDocum
 
     void deleteByIsin(String isin);
 
+    void deleteByIsinAndDocumentType(String isin, DocumentType documentType);
+
     /**
      * Executes candidate-constrained PostgreSQL tri-factor hybrid retrieval:
      * 1. Hard relational pre-filter on approved candidate ISINs (:candidateIsins) via B-Tree index.
