@@ -63,3 +63,10 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+
+# Google Gemini AI Configuration
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
+  generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.0-flash}
+

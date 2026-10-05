@@ -80,6 +80,7 @@ services:
       AWS_S3_ENDPOINT: http://localstack:4566
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       AWS_S3_PATH_STYLE: "true"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "8080:8080"
     deploy:
@@ -111,6 +112,7 @@ services:
       REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY}
       CORS_ORIGIN: http://localhost:3000
       UPLOAD_DIR: uploads
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "5000:5000"
     volumes:
