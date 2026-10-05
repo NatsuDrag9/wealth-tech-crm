@@ -78,6 +78,12 @@ gemini:
   api-base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta/models}
   embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
   generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.0-flash}
+  generation-temperature: ${GEMINI_GENERATION_TEMPERATURE:0.1}
+
+# RAG Knowledge & Grounded Synthesis Configuration
+rag:
+  similarity-threshold: ${RAG_SIMILARITY_THRESHOLD:0.65}
+  top-k: ${RAG_TOP_K:5}
 
 resilience:
   defaults:
@@ -92,6 +98,8 @@ resilience:
     base-delay-ms: ${GEMINI_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
     max-delay-ms: ${GEMINI_MAX_DELAY_MS:${resilience.defaults.max-delay-ms}}
     jitter-percent: ${GEMINI_JITTER_PERCENT:${resilience.defaults.jitter-percent}}
+    connect-timeout-ms: ${GEMINI_CONNECT_TIMEOUT_MS:${resilience.defaults.connect-timeout-ms}}
+    request-timeout-ms: ${GEMINI_REQUEST_TIMEOUT_MS:${resilience.defaults.request-timeout-ms}}
   s3:
     max-retries: ${S3_MAX_RETRIES:${resilience.defaults.max-retries}}
     base-delay-ms: ${S3_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}

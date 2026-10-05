@@ -24,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
  * Service for candidate-constrained hybrid RAG retrieval and post-retrieval quality validation.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class RagRetrievalService {
 
@@ -33,6 +32,22 @@ public class RagRetrievalService {
     private final RaRepository raRepository;
     private final GeminiEmbeddingService embeddingService;
     private final MeterRegistry meterRegistry;
+    private final double defaultSimilarityThreshold;
+
+    public RagRetrievalService(
+            FundDocumentEmbeddingRepository embeddingRepository,
+            EligibleFundRepository eligibleFundRepository,
+            RaRepository raRepository,
+            GeminiEmbeddingService embeddingService,
+            MeterRegistry meterRegistry,
+            @org.springframework.beans.factory.annotation.Value("${rag.similarity-threshold:0.65}") double defaultSimilarityThreshold) {
+        this.embeddingRepository = embeddingRepository;
+        this.eligibleFundRepository = eligibleFundRepository;
+        this.raRepository = raRepository;
+        this.embeddingService = embeddingService;
+        this.meterRegistry = meterRegistry;
+        this.defaultSimilarityThreshold = defaultSimilarityThreshold;
+    }
 
     /**
      * Executes candidate-constrained retrieval with post-retrieval quality gate validation.
@@ -137,7 +152,9 @@ public class RagRetrievalService {
 
         meterRegistry.summary("rag_similarity_score").record(maxScore);
 
-        double threshold = request.resolvedSimilarityThreshold();
+        double threshold = (request.similarityThreshold() != null && request.similarityThreshold() > 0)
+                ? request.similarityThreshold()
+                : defaultSimilarityThreshold;
         boolean isSufficient = maxScore >= threshold;
 
         // Evidence consistency: % of retrieved chunks matching expected candidate ISINs

@@ -56,7 +56,7 @@ public class GeminiEmbeddingService {
                 ? embeddingModel.trim()
                 : "text-embedding-004";
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
+                .connectTimeout(Duration.ofMillis(resilienceProperties.getGemini().getConnectTimeoutMs()))
                 .build();
         this.objectMapper = objectMapper;
         this.resilienceProperties = resilienceProperties;
@@ -111,7 +111,7 @@ public class GeminiEmbeddingService {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(endpoint))
                         .header("Content-Type", "application/json")
-                        .timeout(Duration.ofSeconds(30))
+                        .timeout(Duration.ofMillis(policy.getRequestTimeoutMs()))
                         .POST(HttpRequest.BodyPublishers.ofString(jsonPayload, StandardCharsets.UTF_8))
                         .build();
 
