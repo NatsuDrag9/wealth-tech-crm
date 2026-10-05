@@ -10,6 +10,14 @@ spring:
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 15000       # 15s connection timeout
+      validation-timeout: 5000         # 5s validation timeout
+      idle-timeout: 300000             # 5 minutes
+      max-lifetime: 1800000            # 30 minutes
+      maximum-pool-size: 10            # Bounded pool size preventing resource exhaustion
+      minimum-idle: 2
+      leak-detection-threshold: 20000  # 20s leak warning
 
   jpa:
     hibernate:
@@ -67,6 +75,30 @@ management:
 # Google Gemini AI Configuration
 gemini:
   api-key: ${GEMINI_API_KEY:}
+  api-base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta/models}
   embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
   generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.0-flash}
 
+resilience:
+  defaults:
+    max-retries: 3
+    base-delay-ms: 500
+    max-delay-ms: 5000
+    jitter-percent: 20
+    connect-timeout-ms: 15000
+    request-timeout-ms: 30000
+  gemini:
+    max-retries: ${GEMINI_MAX_RETRIES:${resilience.defaults.max-retries}}
+    base-delay-ms: ${GEMINI_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
+    max-delay-ms: ${GEMINI_MAX_DELAY_MS:${resilience.defaults.max-delay-ms}}
+    jitter-percent: ${GEMINI_JITTER_PERCENT:${resilience.defaults.jitter-percent}}
+  s3:
+    max-retries: ${S3_MAX_RETRIES:${resilience.defaults.max-retries}}
+    base-delay-ms: ${S3_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
+    max-delay-ms: ${S3_MAX_DELAY_MS:${resilience.defaults.max-delay-ms}}
+    jitter-percent: ${S3_JITTER_PERCENT:${resilience.defaults.jitter-percent}}
+  ingestion:
+    max-retries: ${INGESTION_MAX_RETRIES:${resilience.defaults.max-retries}}
+    base-delay-ms: ${INGESTION_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
+    max-delay-ms: ${INGESTION_MAX_DELAY_MS:${resilience.defaults.max-delay-ms}}
+    jitter-percent: ${INGESTION_JITTER_PERCENT:${resilience.defaults.jitter-percent}}
