@@ -436,3 +436,40 @@ erDiagram
      - `s3_operation_failures_total`: Counter tracking cloud storage errors.
      - `http_server_requests_seconds`: End-to-end HTTP request duration percentiles across all REST controllers.
 
+---
+
+#### 7. Design Trade-Off: Storing Temporary PII Tokens at High Scale (10k+ req/sec)
+
+##### The Context & Scale Numbers
+Before sending prompts to Gemini, we replace sensitive client details (Name, PAN, Phone) with temporary placeholder tags like `{{CLIENT_NAME_1}}`. When Gemini replies, we swap the real details back in.
+
+If the system handles **10,000 requests per second**:
+* **Memory footprint is surprisingly small:**
+  - Each request only has 3 to 5 tags ($\approx 1\text{ KB}$ of memory).
+  - If Gemini takes 1.5 seconds to reply, there are about 15,000 requests waiting at any moment.
+  - $15,000 \times 1\text{ KB} \approx 15\text{ MB}$ of memory across the whole cluster.
+* **The real risks at high scale:**
+  1. **Garbage Collection (GC) churn:** Creating and throwing away 10,000 maps and strings every second makes the garbage collector work hard and can cause CPU spikes.
+  2. **Slow responses / Timeouts:** If Gemini slows down to 15 seconds, the number of waiting requests jumps from 15,000 to 150,000, multiplying memory use by 10x.
+  3. **Memory leaks:** If we keep tags in a shared global map and a request fails or times out, the tags might never be removed.
+
+##### Pattern 1: Request-Scoped Pipeline (Our Immediate Choice)
+* **How it works:**
+  - We do not use any global map, shared cache, or Redis.
+  - The temporary tags live only inside a local `PiiTokenizationResult` object passed through the current request pipeline.
+  - The moment Gemini replies and we swap the real values back in, the temporary map is immediately discarded and cleaned up by the garbage collector.
+* **Why we use this now:**
+  - Simple, fast, and lightweight.
+  - Zero risk of memory leaks because nothing is stored in a shared global table.
+
+##### Pattern 3: Stateless Cryptographic Tokens (Recommended Standard at Scale)
+* **How it works:**
+  - We do not store any map in memory at all.
+  - Instead, we encrypt the real value directly into the tag using a secret application key (for example: `{{ENC:encrypted_text}}`).
+  - Gemini sees `{{ENC:encrypted_text}}` as a normal placeholder and copies it into its response.
+  - When the response comes back, our backend decrypts `encrypted_text` back into the real value using the secret key.
+* **Trade-off summary:**
+  - **Memory used:** **Zero bytes.** No maps, no caches, and no risk of memory leaks.
+  - **Multi-server ready:** Any server with the secret key can decrypt the tag without needing to share session data.
+  - **Trade-off:** Uses a small amount of extra CPU to encrypt and decrypt values. This is the industry standard approach when high traffic and crypto resources are available.
+

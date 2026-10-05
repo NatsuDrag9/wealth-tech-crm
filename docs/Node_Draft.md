@@ -144,6 +144,22 @@ flowchart TD
 1. **User Manager**: User data lives in a single database table, and the API returns that record directly with passwords automatically hidden without needing separate DTOs.
 2. **Customer**: Customer data is split across two tables (`Client` and `ClientProfile`), so DTOs are used to merge them (e.g. `ClientResponseDto` pulls personal details from `Client` and `kyc_status` from `ClientProfile` into one response for the table view).
 
+### Storing Temporary PII Tokens at High Scale (10k+ req/sec)
+
+1. **Context & Scale:** Before prompts reach Gemini, we replace sensitive client data (Name, PAN, Phone) with temporary placeholder tokens (`{{CLIENT_NAME_1}}`) and rehydrate the response later. At 10,000 req/sec with an average 1.5s LLM latency, the cluster handles ~15,000 concurrent in-flight requests. With 3–5 tokens per request (~1 KB memory), total memory is only ~15 MB across all containers.
+2. **The Real Risks:** The main risk at 10k req/sec is not raw RAM size, but:
+   - **GC pressure / Event Loop lag:** Allocating and discarding 10,000 maps and strings per second strains Node.js garbage collection.
+   - **Timeouts:** If Gemini response times degrade to 15 seconds, in-flight requests multiply by 10x (150,000 requests).
+   - **Memory leaks:** Global maps risk leaking memory if aborted requests miss cleanup steps.
+3. **Pattern 1: Request-Scoped Pipeline (Our Immediate Choice):**
+   - We do not use any global map, shared cache, or Redis.
+   - The token map is kept strictly inside an ephemeral request-scoped object passed along the async promise pipeline.
+   - Once the response is rehydrated, the map is immediately discarded and garbage-collected. This avoids memory leaks and stays fast and lightweight.
+4. **Pattern 3: Stateless Cryptographic Tokens (Recommended Standard at Scale):**
+   - Instead of storing any map in memory, we encrypt the real value directly into the tag using a secret application key (e.g., `{{ENC:encrypted_text}}`).
+   - Gemini mirrors the tag in its response, and our backend decrypts it on the fly.
+   - **Memory used: Zero bytes.** No maps, no caches, completely portable across Node.js instances, with zero memory leak risk. Trade-off: Small CPU cost for AES encryption/decryption. This is the recommended standard when high traffic and crypto resources are available.
+
 ---
 
 ## Libraries & Ecosystem Choices
