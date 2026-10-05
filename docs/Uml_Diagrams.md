@@ -95,6 +95,7 @@ flowchart LR
         PRS["PortfolioReviewService"]
         PDF["PortfolioPdfGeneratorService"]
         MFS["MasterFundService"]
+        RAG["RagRetrievalService (Candidate Constrained)"]
     end
 
     subgraph Repos["Spring Data JPA Repositories"]
@@ -102,6 +103,7 @@ flowchart LR
         PRR["PortfolioReviewRepo / EntryRepo"]
         RR["PortfolioRecommendationRepo / FundItemRepo"]
         EFR["EligibleFundRepository"]
+        FDER["FundDocumentEmbeddingRepository"]
         UR["UserRepository / RoleRepo / GroupRepo"]
     end
 
@@ -111,7 +113,7 @@ flowchart LR
     end
 
     subgraph Storage["Physical Storage"]
-        Postgres[("PostgreSQL Database<br/>(Relational Records & Metadata)")]
+        Postgres[("PostgreSQL Database<br/>(Relational Records, GIN Lexical + pgvector HNSW Store)")]
         S3Bucket[("AWS S3 / LocalStack Bucket<br/>(PDFs, Statements, Excel Files)")]
     end
 
@@ -124,12 +126,15 @@ flowchart LR
     PDF --> S3S
     MFS --> EFR
     MFS --> S3S
+    RAG --> EFR
+    RAG --> FDER
     S3S --> Presigner
 
     CR -->|"Hibernate / JDBC"| Postgres
     PRR -->|"Hibernate / JDBC"| Postgres
     RR -->|"Hibernate / JDBC"| Postgres
     EFR -->|"Hibernate / JDBC"| Postgres
+    FDER -->|"B-Tree Filter + HNSW Cosine + GIN Lexical"| Postgres
     UR -->|"Hibernate / JDBC"| Postgres
     S3S -->|"PutObject / GetObject HTTP"| S3Bucket
 ```
@@ -373,11 +378,35 @@ classDiagram
         PDF_FAILED
     }
 
+    class FundDocumentEmbedding {
+        +Long id
+        +String isin
+        +String fundName
+        +DocumentType documentType
+        +ScoreCategory category
+        +String assetClass
+        +Integer chunkIndex
+        +String chunkText
+        +String metadata
+        +float[] embedding
+        +LocalDateTime createdAt
+    }
+
+    class DocumentType {
+        <<enumeration>>
+        FACTSHEET
+        SID
+        RISKOMETER
+        EXPENSE_DISCLOSURE
+    }
+
     PortfolioReview "1" --> "*" PortfolioEntry : composition (owns holdings)
     PortfolioRecommendation "1" --> "0..1" PortfolioReview : has-a (reviews against)
     PortfolioRecommendation "1" --> "*" RecommendationFundItem : composition (owns fund items)
     RecommendationFundItem "*" --> "1" EligibleFund : has-a (references fund)
     RecommendationFundItem "*" --> "0..1" PortfolioEntry : has-a (replaces holding)
+    FundDocumentEmbedding "*" --> "1" EligibleFund : candidate constraint (isin)
+    FundDocumentEmbedding --> DocumentType : documentType
     PortfolioEntry --> EntryAction : action
     PortfolioRecommendation --> RecommendationFlowType : flowType
     PortfolioRecommendation --> RecommendationStatus : status
@@ -440,6 +469,71 @@ classDiagram
     RiskAnswer "*" --> "1" RiskAssessment : has-a (belongs to assessment)
     RiskAssessment --> ScoreCategory : scoreCategory
     RiskAssessment --> AssessmentStatus : status
+```
+
+#### 2.5 AI-Native RAG & Grounded Retrieval Engine
+Models the persistence, metadata indexing, and Spring Data JPA hybrid retrieval contracts powering grounded mutual fund research and compliance verification.
+
+```mermaid
+classDiagram
+    class FundDocumentEmbedding {
+        +Long id
+        +String isin
+        +String fundName
+        +DocumentType documentType
+        +ScoreCategory category
+        +String assetClass
+        +Integer chunkIndex
+        +String chunkText
+        +String metadata
+        +float[] embedding
+        +LocalDateTime createdAt
+    }
+
+    class FundDocumentEvidenceProjection {
+        <<interface>>
+        +getId() Long
+        +getIsin() String
+        +getFundName() String
+        +getDocumentType() String
+        +getScoreCategory() String
+        +getAssetClass() String
+        +getChunkIndex() Integer
+        +getChunkText() String
+        +getMetadata() String
+        +getHybridScore() Double
+        +getCreatedAt() LocalDateTime
+    }
+
+    class FundDocumentEmbeddingRepository {
+        <<interface>>
+        +findByIsin(isin) List~FundDocumentEmbedding~
+        +findByIsinAndDocumentType(isin, documentType) List~FundDocumentEmbedding~
+        +deleteByIsin(isin) void
+        +findTopKRelevantEvidence(candidateIsins, queryEmbedding, queryText, limit) List~FundDocumentEvidenceProjection~
+    }
+
+    class DocumentType {
+        <<enumeration>>
+        FACTSHEET
+        SID
+        RISKOMETER
+        EXPENSE_DISCLOSURE
+    }
+
+    class EligibleFund {
+        +Long id
+        +String fundName
+        +String isin
+        +ScoreCategory scoreCategory
+        +Boolean isActive
+    }
+
+    FundDocumentEmbeddingRepository ..> FundDocumentEmbedding : manages
+    FundDocumentEmbeddingRepository ..> FundDocumentEvidenceProjection : returns top-k
+    FundDocumentEmbedding --> DocumentType : documentType
+    FundDocumentEmbedding --> ScoreCategory : category
+    FundDocumentEmbedding "*" --> "1" EligibleFund : bounded by candidate isin
 ```
 
 ---
@@ -736,6 +830,72 @@ sequenceDiagram
 
     Ctrl-->>Advisor: 200 OK (EcasUploadResponse with s3Key & presignedUrl)
     deactivate Ctrl
+```
+
+#### 3.5 AI-Native Grounded RAG Retrieval Pipeline (Candidate-Constrained Hybrid Search)
+Illustrates end-to-end question processing, candidate whitelist extraction from relational storage, PostgreSQL tri-factor hybrid search, evidence quality validation, and grounded LLM synthesis.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor RM as Relationship Manager / Agent Copilot
+    participant Agent as Research / Rebalancing Agent
+    participant EFRepo as EligibleFundRepository
+    participant RAGRepo as FundDocumentEmbeddingRepository
+    participant DB as PostgreSQL (pgvector + GIN + B-Tree)
+    participant Gate as Evidence Quality Gate
+    participant LLM as Grounded LLM Synthesizer
+
+    RM->>Agent: Query (e.g. "Compare expense ratio and risk for active Flexi Cap funds")
+    activate Agent
+
+    rect rgb(240, 248, 255)
+    Note over Agent,EFRepo: Step 1: Deterministic Candidate Whitelisting
+    Agent->>EFRepo: findByScoreCategoryAndIsActiveTrue(MODERATE)
+    activate EFRepo
+    EFRepo->>DB: SELECT * FROM eligible_funds WHERE score_category = 'MODERATE' AND active = true
+    DB-->>EFRepo: List of approved EligibleFund entities
+    EFRepo-->>Agent: candidateIsins = ["INF843801019", "INF209K01165", ...]
+    deactivate EFRepo
+    end
+
+    rect rgb(255, 250, 240)
+    Note over Agent,RAGRepo: Step 2: PostgreSQL Tri-Factor Hybrid Retrieval
+    Agent->>RAGRepo: findTopKRelevantEvidence(candidateIsins, queryEmbedding, queryText, limit=5)
+    activate RAGRepo
+    RAGRepo->>DB: SELECT ... WHERE isin IN (:candidateIsins) ORDER BY (0.7*semantic + 0.3*lexical) DESC LIMIT 5
+    activate DB
+    Note over DB: 1. B-Tree filters candidate ISINs<br/>2. HNSW evaluates cosine distance (1 - <=> embedding)<br/>3. GIN evaluates ts_rank_cd(tsvector, tsquery)<br/>4. Fused ranking bounded by LIMIT 5
+    DB-->>RAGRepo: Top-5 FundDocumentEvidenceProjection records
+    deactivate DB
+    RAGRepo-->>Agent: List~FundDocumentEvidenceProjection~
+    deactivate RAGRepo
+    end
+
+    rect rgb(245, 255, 245)
+    Note over Agent,Gate: Step 3: Post-Retrieval Validation (Evidence Quality Gate)
+    Agent->>Gate: validateEvidence(chunks, candidateIsins, threshold=0.75)
+    activate Gate
+    Note over Gate: Calculates rag_similarity_score & evidence_consistency_score
+    alt Scores >= Threshold (PASS)
+        Gate-->>Agent: Evidence Validated (Context Approved)
+    else Scores < Threshold (FAIL)
+        Gate-->>Agent: Quality Check Failed (Query Reformulation Triggered)
+    end
+    deactivate Gate
+    end
+
+    rect rgb(250, 240, 255)
+    Note over Agent,LLM: Step 4: Grounded Synthesis with Citations
+    Agent->>LLM: synthesizeAnswer(userQuery, verifiedContext)
+    activate LLM
+    Note over LLM: Restricts generation strictly to retrieved factsheet/SID facts
+    LLM-->>Agent: Grounded response with document name, date & page citations
+    deactivate LLM
+    end
+
+    Agent-->>RM: Verified, cited answer ready for client presentation
+    deactivate Agent
 ```
 
 ---

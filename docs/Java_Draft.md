@@ -196,6 +196,74 @@ stateDiagram-v2
 - **`PDF_GENERATED`**: The asynchronous OpenPDF worker finishes rendering tables, sums, and SEBI disclaimers to `uploads/recommendations/recommendation_{id}.pdf`, sets `generated_document_url`, and commits `PDF_GENERATED`. Frontend polling terminates upon seeing this state and reveals the download link.
 - **`PDF_FAILED`**: If rendering or disk I/O throws an error, the async worker catches the exception and marks the status as `PDF_FAILED`. The frontend halts polling and renders a retry button allowing the RM to re-trigger generation.
 
+##### 4. AI-Native RAG & Mutual Fund Grounding Engine (pgvector Hybrid Retrieval)
+
+###### A. Architectural Motivation & Candidate Whitelisting
+In wealth management, unconstrained RAG retrieval is high risk: a standard semantic vector query across generic mutual fund corpora could retrieve unauthorized or unsuitable funds for a client's risk appetite.
+To guarantee regulatory compliance:
+1. **Candidate Whitelisting**: The system queries `EligibleFundRepository.findByScoreCategoryAndIsActiveTrue(scoreCategory)` first to fetch only approved, active ISINs matching the investor's assessed risk category (`ScoreCategory`).
+2. **Hard Candidate Pushdown**: The retrieved ISIN collection is passed into the hybrid retrieval query as a mandatory hard filter: `WHERE f.isin IN (:candidateIsins)`.
+
+###### B. Database Schema & Tri-Factor Indexing
+The grounding engine persists ingested regulatory documents (`FACTSHEET`, `SID`, `RISKOMETER`, `EXPENSE_DISCLOSURE`) in `fund_document_embeddings`:
+
+```mermaid
+erDiagram
+    eligible_funds ||--o{ fund_document_embeddings : "candidate constraint by ISIN"
+
+    fund_document_embeddings {
+        bigint id PK
+        varchar isin "12-char ISIN, B-Tree index"
+        varchar fund_name
+        varchar document_type "FACTSHEET, SID, RISKOMETER, EXPENSE_DISCLOSURE"
+        varchar score_category "B-Tree index"
+        varchar asset_class
+        integer chunk_index
+        text chunk_text "GIN tsvector index for full-text search"
+        text metadata "JSON string (page, date, section, url)"
+        vector embedding "1536-dim vector, HNSW cosine index"
+        timestamp created_at
+    }
+```
+
+* **B-Tree Indexing**: On `isin`, `score_category`, and `document_type` for rapid metadata filtering and candidate bounding.
+* **HNSW Indexing (`pgvector`)**: Cosine distance operator (`<=>`) for 1536-dimensional semantic vector search (`(1.0 - (f.embedding <=> CAST(:queryEmbedding AS vector)))`).
+* **GIN Indexing (`to_tsvector`)**: Lexical keyword matching via `ts_rank_cd(to_tsvector('english', f.chunk_text), plainto_tsquery('english', :queryText))` to catch specific fund names, ticker symbols, and exact numeric disclosures without hallucination.
+
+###### C. Fused Hybrid Scoring & SQL Top-K Bounding
+The retrieval query runs entirely inside PostgreSQL ACID storage with weighted linear fusion (`0.70 * semantic + 0.30 * lexical`), bounded strictly by `LIMIT :limit`:
+
+```java
+@Query(value = """
+    SELECT 
+        f.id AS id,
+        f.isin AS isin,
+        f.fund_name AS fundName,
+        f.document_type AS documentType,
+        f.score_category AS scoreCategory,
+        f.asset_class AS assetClass,
+        f.chunk_index AS chunkIndex,
+        f.chunk_text AS chunkText,
+        f.metadata AS metadata,
+        f.created_at AS createdAt,
+        (
+            0.7 * (1.0 - (f.embedding <=> CAST(:queryEmbedding AS vector))) +
+            0.3 * ts_rank_cd(to_tsvector('english', f.chunk_text), plainto_tsquery('english', :queryText))
+        ) AS hybridScore
+    FROM fund_document_embeddings f
+    WHERE f.isin IN (:candidateIsins)
+    ORDER BY hybridScore DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+List<FundDocumentEvidenceProjection> findTopKRelevantEvidence(
+        @Param("candidateIsins") Collection<String> candidateIsins,
+        @Param("queryEmbedding") String queryEmbedding,
+        @Param("queryText") String queryText,
+        @Param("limit") int limit);
+```
+
+The resulting `FundDocumentEvidenceProjection` records are evaluated against the Evidence Quality Gate (`rag_similarity_score` and `evidence_consistency_score`) before being synthesized into grounded recommendations.
+
 ---
 
 #### Customer Management
