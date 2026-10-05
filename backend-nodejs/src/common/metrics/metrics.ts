@@ -52,3 +52,19 @@ export const agentExecutionIterations = new client.Histogram({
   buckets: [1, 2, 3, 4, 5, 6, 8, 10],
   registers: [register],
 });
+
+export const s3OperationDurationSeconds = new client.Histogram({
+  name: 's3_operation_duration_seconds',
+  help: 'Latency of AWS S3 and LocalStack operations in seconds',
+  labelNames: ['operation', 'bucket'] as const,
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+  registers: [register],
+});
+
+export const s3OperationFailuresTotal = new client.Counter({
+  name: 's3_operation_failures_total',
+  help: 'Total failed S3 operations',
+  labelNames: ['operation', 'bucket'] as const,
+  registers: [register],
+});
+
