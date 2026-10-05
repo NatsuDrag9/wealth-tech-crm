@@ -54,6 +54,84 @@ flowchart TD
 
 ---
 
+## 2. Docker & Environment Variable Loading Pipeline (Dual-Backend Architecture)
+
+This section explains how environment variables (database credentials, JWT secrets, storage endpoints, and AI keys like `GEMINI_API_KEY`) are loaded and resolved across both the Java Spring Boot (`backend-java`) and Node.js Express (`backend-nodejs`) services.
+
+```mermaid
+flowchart TD
+    Env["1. Host Root .env File<br/>(Database credentials, JWT secrets, AI keys)"] -->|"Docker Compose reads on startup"| DC["2. docker-compose.yml<br/>(Interpolates ${VAR} into environment: blocks)"]
+    
+    DC -->|"Injects Linux OS environment variables"| JavaCont["3A. crm-backend-java Container"]
+    DC -->|"Injects Linux OS environment variables"| NodeCont["3B. crm-backend-nodejs Container"]
+    
+    JavaCont -->|"Spring Boot placeholder resolution & relaxed binding"| SBApp["4A. Spring Boot App<br/>application.yml (${VAR:}) & @Value"]
+    NodeCont -->|"Node runtime global process environment"| NodeApp["4B. Node.js / Express App<br/>process.env.VAR"]
+```
+
+### The 3 Stages of Environment Loading
+
+#### Stage 1: Host Level (Root `.env`)
+* A single root `.env` file at the project root (`wealth-tech-crm/.env`) stores all sensitive local environment variables.
+* **Security Guardrail**: The root `.env` is registered in `.gitignore` and is strictly excluded from version control. All teams and deployment environments use `.env.example` as the canonical template.
+
+#### Stage 2: Docker Compose Orchestration (`docker-compose.yml`)
+* When executing `docker compose up`, Docker Compose automatically parses the root `.env` file in the same directory and uses it to interpolate `${VARIABLE_NAME}` tokens.
+* **Container Isolation**: Docker does **not** blindly copy every variable from the host `.env` into container memory. Variables are only passed into a container if explicitly declared under that service's `environment:` block:
+
+```yaml
+services:
+  backend-java:
+    container_name: crm-backend-java
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JAVA_JWT_SECRET}
+      AWS_REGION: ${AWS_REGION}
+      AWS_S3_ENDPOINT: http://localstack:4566
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}   # <-- Forwarded from host .env
+
+  backend-nodejs:
+    container_name: crm-backend-nodejs
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongodb:27017/${MONGO_INITDB_DATABASE}
+      JWT_SECRET: ${NODE_JWT_SECRET}
+      JWT_EXPIRY: ${JWT_EXPIRY}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}   # <-- Forwarded from host .env
+```
+* **Fallback Safety**: Using `${VAR:-}` ensures that if a developer has not set an optional key, Docker Compose supplies an empty string rather than crashing container orchestration.
+
+#### Stage 3: Runtime Resolution in Application Code
+
+##### A. Java Spring Boot (`backend-java`)
+1. **Container OS Environment**: When Docker boots the Linux container, the variables in `environment:` become standard OS environment variables accessible via `System.getenv(...)`.
+2. **Property Placeholder Resolution**: Spring Boot reads `src/main/resources/application.yml`:
+   ```yaml
+   gemini:
+     api-key: ${GEMINI_API_KEY:}
+     embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
+     generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.0-flash}
+   ```
+   Spring's `PropertySourcesPlaceholderConfigurer` checks the container OS environment and binds the value to `${GEMINI_API_KEY:}`.
+3. **Relaxed Binding**: Spring Boot automatically maps uppercase underscored OS environment variables to dotted properties (e.g., `GEMINI_API_KEY` maps to `gemini.api-key`).
+4. **Resilient Local Fallback**: The trailing colon `:` provides an empty default string (`""`), preventing missing property exceptions during offline tests or CI/CD builds without an active API key.
+
+##### B. Node.js Express (`backend-nodejs`)
+1. **Container OS Environment**: In the containerized Node.js runtime, all variables defined in `environment:` are immediately populated into the global `process.env` object.
+2. **Direct Memory Access**: Application modules access configuration directly with zero reflection or annotation overhead:
+   ```typescript
+   const geminiApiKey = process.env.GEMINI_API_KEY || '';
+   const jwtSecret = process.env.JWT_SECRET;
+   ```
+3. **Non-Docker Local Development**: When executed locally via `npm run dev` outside Docker, `dotenv` loads the root `.env` into `process.env` before server initialization.
+
+---
+
 ## 3. Java Spring Boot on Render Configuration
 
 Render’s free tier provides 512 MB of total RAM. Because standard JVMs attempt to allocate up to 25–50% of host RAM without container awareness, Spring Boot must be restricted via JVM flags.
