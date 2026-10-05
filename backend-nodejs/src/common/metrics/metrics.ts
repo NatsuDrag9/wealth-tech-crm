@@ -68,3 +68,19 @@ export const s3OperationFailuresTotal = new client.Counter({
   registers: [register],
 });
 
+export const piiRedactedTokensTotal = new client.Counter({
+  name: 'pii_redacted_tokens_total',
+  help: 'Total number of PII tokens sanitized and redacted',
+  labelNames: ['entity_type'] as const,
+  registers: [register],
+});
+
+export const piiTokenizationDurationSeconds = new client.Histogram({
+  name: 'pii_tokenization_duration_seconds',
+  help: 'Duration of PII tokenization operations in seconds',
+  labelNames: ['status'] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25],
+  registers: [register],
+});
+
+
