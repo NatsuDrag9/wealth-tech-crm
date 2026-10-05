@@ -23,7 +23,7 @@ public class DocumentChunkingService {
     private static final int DEFAULT_TARGET_CHUNK_SIZE = 1200; // characters (~250-300 words)
     private static final int DEFAULT_OVERLAP_SIZE = 200;      // characters
 
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * Chunks a document page-by-page, attaching page metadata and preserving context across boundaries.

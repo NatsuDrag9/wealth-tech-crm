@@ -47,7 +47,6 @@ public class GeminiGenerationService {
             @Value("${gemini.api-base-url:https://generativelanguage.googleapis.com/v1beta/models}") String apiBaseUrl,
             @Value("${gemini.generation-model:gemini-2.0-flash}") String generationModel,
             @Value("${gemini.generation-temperature:0.1}") double defaultTemperature,
-            ObjectMapper objectMapper,
             ResilienceProperties resilienceProperties,
             MeterRegistry meterRegistry) {
         this.apiKey = apiKey != null ? apiKey.trim() : "";
@@ -58,7 +57,7 @@ public class GeminiGenerationService {
                 ? generationModel.trim()
                 : "gemini-2.0-flash";
         this.defaultTemperature = defaultTemperature;
-        this.objectMapper = objectMapper;
+        this.objectMapper = new ObjectMapper();
         this.resilienceProperties = resilienceProperties;
         this.meterRegistry = meterRegistry;
 

@@ -60,7 +60,7 @@ public class FundDocumentEmbedding {
     private String metadata;
 
     @JdbcTypeCode(SqlTypes.VECTOR)
-    @Column(name = "embedding")
+    @Column(name = "embedding", columnDefinition = "vector")
     private float[] embedding;
 
     @Column(name = "created_at")

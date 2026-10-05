@@ -45,7 +45,6 @@ public class GeminiEmbeddingService {
             @Value("${gemini.api-key:}") String apiKey,
             @Value("${gemini.api-base-url:https://generativelanguage.googleapis.com/v1beta/models}") String apiBaseUrl,
             @Value("${gemini.embedding-model:text-embedding-004}") String embeddingModel,
-            ObjectMapper objectMapper,
             ResilienceProperties resilienceProperties,
             MeterRegistry meterRegistry) {
         this.apiKey = apiKey != null ? apiKey.trim() : "";
@@ -58,7 +57,7 @@ public class GeminiEmbeddingService {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(resilienceProperties.getGemini().getConnectTimeoutMs()))
                 .build();
-        this.objectMapper = objectMapper;
+        this.objectMapper = new ObjectMapper();
         this.resilienceProperties = resilienceProperties;
         this.meterRegistry = meterRegistry;
 
