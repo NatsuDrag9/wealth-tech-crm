@@ -7,6 +7,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.wealthtech.crm.infrastructure.ai.GeminiGenerationService;
+import com.wealthtech.crm.infrastructure.ai.security.PiiProtectionGateway;
+import com.wealthtech.crm.infrastructure.ai.security.PiiTokenizationResult;
+import com.wealthtech.crm.modules.customer.entity.Client;
+import com.wealthtech.crm.modules.customer.entity.ClientProfile;
+import com.wealthtech.crm.modules.customer.repository.ClientRepository;
 import com.wealthtech.crm.modules.portfolioreview.dto.*;
 
 import io.micrometer.core.instrument.Counter;
@@ -16,12 +21,14 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service orchestrating grounded RAG query synthesis:
- * 1. Executes candidate-constrained retrieval.
- * 2. Evaluates the Evidence Quality Gate.
- * 3. Triggers automated query refinement on quality gate failures.
- * 4. Assembles grounded context with explicit source anchors.
- * 5. Synthesizes factual natural-language answers via Gemini 2.0 Flash.
- * 6. Records granular end-to-end latency breakdowns.
+ * 1. Executes bidirectional PII tokenization to protect client identity before LLM ingestion.
+ * 2. Executes candidate-constrained retrieval.
+ * 3. Evaluates the Evidence Quality Gate.
+ * 4. Triggers automated query refinement on quality gate failures.
+ * 5. Assembles grounded context with explicit source anchors.
+ * 6. Synthesizes factual natural-language answers via Gemini 2.0 Flash.
+ * 7. Rehydrates surrogate PII tokens into the final response before delivery.
+ * 8. Records granular end-to-end latency breakdowns.
  */
 @Service
 @Slf4j
@@ -30,6 +37,8 @@ public class RagSynthesisService {
     private final RagRetrievalService retrievalService;
     private final RagQueryRefinerService queryRefinerService;
     private final GeminiGenerationService generationService;
+    private final PiiProtectionGateway piiProtectionGateway;
+    private final ClientRepository clientRepository;
     private final MeterRegistry meterRegistry;
 
     private final int defaultTopK;
@@ -40,6 +49,8 @@ public class RagSynthesisService {
             RagRetrievalService retrievalService,
             RagQueryRefinerService queryRefinerService,
             GeminiGenerationService generationService,
+            PiiProtectionGateway piiProtectionGateway,
+            ClientRepository clientRepository,
             MeterRegistry meterRegistry,
             @Value("${rag.top-k:5}") int defaultTopK,
             @Value("${rag.similarity-threshold:0.65}") double defaultSimilarityThreshold,
@@ -47,6 +58,8 @@ public class RagSynthesisService {
         this.retrievalService = retrievalService;
         this.queryRefinerService = queryRefinerService;
         this.generationService = generationService;
+        this.piiProtectionGateway = piiProtectionGateway;
+        this.clientRepository = clientRepository;
         this.meterRegistry = meterRegistry;
         this.defaultTopK = defaultTopK;
         this.defaultSimilarityThreshold = defaultSimilarityThreshold;
@@ -65,6 +78,14 @@ public class RagSynthesisService {
         int topK = request.resolvedTopK(defaultTopK);
         double threshold = request.resolvedSimilarityThreshold(defaultSimilarityThreshold);
         double temperature = request.resolvedTemperature(defaultTemperature);
+
+        // 0. Forward Pass: Bidirectional PII Minimization & Tokenization
+        Client client = (request.clientId() != null)
+                ? clientRepository.findByIdWithRelations(request.clientId()).orElse(null)
+                : null;
+        ClientProfile profile = (client != null) ? client.getProfile() : null;
+
+        PiiTokenizationResult tokenizedQuery = piiProtectionGateway.tokenize(request.query(), client, profile);
 
         // 1. Initial Candidate-Constrained Retrieval
         long retrievalStartTime = System.currentTimeMillis();
@@ -149,7 +170,7 @@ public class RagSynthesisService {
             4. Keep the tone professional, objective, and compliant with financial advisory standards.
             """;
 
-        String groundedPrompt = assembleGroundedPrompt(request.query(), retrievalResponse.evidenceChunks());
+        String groundedPrompt = assembleGroundedPrompt(tokenizedQuery.sanitizedText(), retrievalResponse.evidenceChunks());
 
         // 5. LLM Synthesis via Gemini 2.0 Flash
         long synthesisStartTime = System.currentTimeMillis();
@@ -168,13 +189,16 @@ public class RagSynthesisService {
                 .register(meterRegistry)
                 .increment();
 
-        // 6. Format Citations List
+        // 6. Backward Pass: De-tokenization / Re-hydration
+        String rehydratedAnswer = tokenizedQuery.rehydrate(synthesizedAnswer);
+
+        // 7. Format Citations List
         List<String> citations = extractCitations(retrievalResponse.evidenceChunks());
         long totalLatencyMs = System.currentTimeMillis() - totalStartTime;
 
         return new RagQueryResponse(
                 request.query(),
-                synthesizedAnswer,
+                rehydratedAnswer,
                 true,
                 queryWasRefined,
                 retrievalResponse.ragSimilarityScore(),
