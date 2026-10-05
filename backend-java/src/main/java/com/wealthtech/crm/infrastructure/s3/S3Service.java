@@ -5,6 +5,10 @@ import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.wealthtech.crm.infrastructure.config.ResilienceProperties;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -16,9 +20,10 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
 
 /**
  * Service encapsulating AWS S3 and LocalStack storage operations:
- * - Direct object upload / download
+ * - Direct object upload / download with exponential backoff and jitter
  * - Pre-signed temporary URL generation for secure client downloads
  * - Automatic bucket provisioning in LocalStack
+ * - Prometheus latency and error telemetry
  */
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,8 @@ public class S3Service {
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final ResilienceProperties resilienceProperties;
+    private final MeterRegistry meterRegistry;
 
     @Value("${aws.s3.bucket-name:wealthtech-crm-bucket}")
     private String bucketName;
@@ -38,7 +45,7 @@ public class S3Service {
 
     /**
      * Uploads raw binary content to S3 / LocalStack under the specified key.
-     * Automatically ensures bucket exists before uploading.
+     * Implements bounded retry with exponential backoff and randomized jitter.
      *
      * @param key S3 object key (e.g., "master-funds/12345_sample.xlsx")
      * @param content byte array of file contents
@@ -48,15 +55,56 @@ public class S3Service {
     public String uploadFile(String key, byte[] content, String contentType) {
         ensureBucketExists();
 
-        PutObjectRequest putRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(key)
-                .contentType(contentType != null ? contentType : "application/octet-stream")
-                .build();
+        Timer.Sample sample = Timer.start(meterRegistry);
+        ResilienceProperties.RetryPolicy policy = resilienceProperties.getS3();
+        int maxRetries = policy.getMaxRetries();
+        int attempt = 0;
 
-        s3Client.putObject(putRequest, RequestBody.fromBytes(content));
-        log.info("Successfully uploaded object to S3: s3://{}/{}", bucketName, key);
-        return key;
+        while (true) {
+            try {
+                PutObjectRequest putRequest = PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(key)
+                        .contentType(contentType != null ? contentType : "application/octet-stream")
+                        .build();
+
+                s3Client.putObject(putRequest, RequestBody.fromBytes(content));
+                sample.stop(Timer.builder("s3_operation_duration_seconds")
+                        .tag("operation", "upload")
+                        .tag("status", "success")
+                        .register(meterRegistry));
+
+                log.info("Successfully uploaded object to S3: s3://{}/{}", bucketName, key);
+                return key;
+            } catch (Exception e) {
+                if (attempt >= maxRetries) {
+                    sample.stop(Timer.builder("s3_operation_duration_seconds")
+                            .tag("operation", "upload")
+                            .tag("status", "failure")
+                            .register(meterRegistry));
+                    Counter.builder("s3_operation_failures_total")
+                            .tag("operation", "upload")
+                            .register(meterRegistry)
+                            .increment();
+
+                    log.error("Exhausted all {} retry attempts for S3 upload of key '{}': {}", maxRetries, key, e.getMessage());
+                    throw e;
+                }
+
+                long backoffDelay = resilienceProperties.calculateBackoffWithJitter(attempt, policy);
+                log.warn("S3 upload failed on attempt {}/{}, retrying in {} ms: {}", attempt + 1, maxRetries, backoffDelay, e.getMessage());
+
+                try {
+                    Thread.sleep(backoffDelay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    log.error("Interrupted during S3 upload retry backoff: {}", ie.getMessage());
+                    throw new RuntimeException("S3 upload interrupted", ie);
+                }
+
+                attempt++;
+            }
+        }
     }
 
     /**
