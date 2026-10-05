@@ -345,3 +345,94 @@ erDiagram
 5. **Prospect & eCAS Storage Pipeline**:
    - **Bulk Prospect Upload** (`POST /java-wtc-api/v1/clients/bulk-upload`): Saves raw spreadsheet to `client-uploads/` in S3 and returns `file_url` (pre-signed URL) with `s3_key`.
    - **eCAS Electronic Statement Upload** (`POST /java-wtc-api/v1/portfolio-reviews/ecas/upload`): Stores client CAS statement directly in `ecas/{clientId}/` in S3 and returns `file_url` (pre-signed URL) with `s3_key`.
+
+---
+
+#### 5. AI-Native RAG Corpus Ingestion & pgvector Storage Architecture
+
+1. **Multi-Document Corpus Taxonomy**:
+   - The platform ingests four distinct mutual fund regulatory disclosure document types into a centralized vector store:
+     - `FACTSHEET`: Monthly performance, fund manager commentary, sector allocations, and top 10 holdings.
+     - `SID` (Scheme Information Document): Investment mandate, asset allocation ranges, benchmark index, and statutory rules.
+     - `RISKOMETER`: SEBI product labeling, risk band evaluation, and suitability matrix.
+     - `EXPENSE_DISCLOSURE`: Total Expense Ratios (TER), tracking error, portfolio turnover, and expense breakdowns.
+   - Raw official documents reside under `assets/rag-sources/{factsheets,sids,riskometer,expenses}/`.
+
+2. **Ingestion & Processing Pipeline**:
+   - **PDF Text Extraction** (`PdfDocumentParserService`): Utilizes Apache PDFBox 3.x with a custom striping engine to extract clean per-page text blocks while preserving section headings and tabular line items.
+   - **Semantic Boundary Chunking** (`DocumentChunkingService`): Splits page texts at natural paragraph and double-newline boundaries targeting ~1,200 characters per chunk with a 200-character overlapping sliding window. Metadata tags (`isin`, `fundName`, `pageNumber`, `sourceFile`) are appended as structured JSON headers.
+   - **Dense Embedding Generation** (`GeminiEmbeddingService`): Produces normalized 768-dimensional dense vector embeddings using Google Gemini `text-embedding-004`. If offline or in air-gapped test environments, a deterministic 768-dimension hash fallback ensures uninterrupted local development.
+   - **Strict Ingestion Idempotency** (`FundDocumentIngestionService`):
+     - Every single PDF ingestion runs within an isolated `@Transactional` boundary.
+     - Before batch-persisting new chunks via `FundDocumentEmbeddingRepository.saveAll(...)`, the service executes:
+       ```java
+       embeddingRepository.deleteByIsinAndDocumentType(meta.isin, docType);
+       ```
+     - This guarantees zero duplicate chunks across repeated or aborted ingestions.
+
+3. **Hybrid Retrieval with Candidate Constraints**:
+   - Rather than scanning millions of unrelated documents across all market funds, the retrieval engine uses **Candidate-Grounded Vector Filtering**:
+     ```sql
+     SELECT e.chunk_text, e.isin, e.fund_name, e.document_type,
+            1 - (e.embedding <=> :queryEmbedding) AS similarity_score
+     FROM fund_document_embeddings e
+     WHERE e.isin IN (:candidateIsins)
+       AND (1 - (e.embedding <=> :queryEmbedding)) >= :similarityThreshold
+     ORDER BY similarity_score DESC
+     LIMIT :topK;
+     ```
+   - This architectural filter eliminates hallucinations and guarantees that LLM copilot recommendations are exclusively grounded in authentic fund disclosures for eligible schemes.
+
+---
+
+#### 6. Enterprise Platform Resilience, Failure Handling & Telemetry Architecture
+
+1. **Centralized Hierarchical Configuration (`ResilienceProperties`)**:
+   - Resilience parameters are declared centrally under `resilience.defaults` and inherited by domain contexts (`gemini`, `s3`, `ingestion`) via Spring placeholder chaining:
+     ```yaml
+     resilience:
+       defaults:
+         max-retries: 3
+         base-delay-ms: 500
+         max-delay-ms: 5000
+         jitter-percent: 20
+         connect-timeout-ms: 15000
+         request-timeout-ms: 30000
+       gemini:
+         max-retries: ${GEMINI_MAX_RETRIES:${resilience.defaults.max-retries}}
+         base-delay-ms: ${GEMINI_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
+     ```
+   - Any property can be dynamically tuned at container runtime via environment variables without recompiling application code.
+
+2. **Bounded Retries with Exponential Backoff & Randomized Jitter**:
+   - **Thundering Herd Defense**: When an external dependency (Gemini AI API, AWS S3/LocalStack) suffers a momentary outage, concurrent retrying clients can saturate and crash recovering services.
+   - **The Jitter Algorithm**:
+     $$\text{rawDelay} = \min(\text{maxDelay}, \text{baseDelay} \times 2^{\text{attempt}})$$
+     $$\text{jitterFactor} = 1.0 + \text{random}(-\text{jitterPercent}, +\text{jitterPercent})$$
+     $$\text{actualDelay} = \text{rawDelay} \times \text{jitterFactor}$$
+   - **Operation Safety Rule**: Retries are permitted strictly for safe/idempotent read operations (embedding API calls, S3 uploads with deterministic keys, database reads). Retrying non-idempotent state mutations without an idempotency key is forbidden.
+
+3. **Strict Network & Connection Timeouts**:
+   - Unbounded network calls are prohibited across all tiers.
+   - HTTP Client (`java.net.http.HttpClient`): Enforces explicit `connectTimeout(Duration.ofSeconds(15))` and `timeout(Duration.ofSeconds(30))`.
+   - Database Connection Pool (`HikariCP`):
+     - `connection-timeout: 15000` (15s maximum wait for pool connection before failing fast)
+     - `validation-timeout: 5000` (5s connection health ping)
+     - `maximum-pool-size: 10` (strictly bounds database connection resource consumption)
+     - `leak-detection-threshold: 20000` (logs actionable stack traces if a connection is held > 20s)
+
+4. **Defensive Boundaries & Logger-Before-Error Rule**:
+   - Every exception caught at service and controller boundaries must execute structured logging with complete context (operation, parameters, error message) before throwing or returning error payloads.
+   - Asynchronous tasks (such as background PDF generation in `PortfolioReviewService.generatePdfAsync`) trap runtime exceptions, log diagnostic traces, and update persistent entity status to `PDF_FAILED` to prevent silently stalled UI states.
+
+5. **Concurrency & Duplicate Execution Protection**:
+   - State-changing background workers check persistent state machines prior to invocation. For example, `PortfolioReviewService.triggerPdfGeneration` verifies if a proposal's status is already `GENERATING` or `PDF_GENERATED` before triggering `@Async` thread pool work, blocking duplicate concurrent rendering requests.
+
+6. **Prometheus Telemetry & Latency Instrumentation**:
+   - Exposed at `/actuator/prometheus` via Micrometer:
+     - `rag_embedding_latency_seconds`: Latency histogram tagged by `status=success|fallback`.
+     - `rag_embedding_calls_total`: Counter tracking successful vs failed Gemini API invocations.
+     - `s3_operation_duration_seconds`: Latency histogram tagged by `operation=upload|presigned_url`.
+     - `s3_operation_failures_total`: Counter tracking cloud storage errors.
+     - `http_server_requests_seconds`: End-to-end HTTP request duration percentiles across all REST controllers.
+

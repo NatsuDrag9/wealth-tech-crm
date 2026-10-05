@@ -1728,3 +1728,166 @@ stateDiagram-v2
     ACTIVE --> INACTIVE : Client deactivates or RM pauses account
     INACTIVE --> ACTIVE : Account reactivated
 ```
+
+---
+
+### 5. AI-Native RAG Ingestion & Hybrid Retrieval Architecture
+
+#### 5.1 Sequence Diagram: RAG Document Ingestion & Idempotent pgvector Storage
+Illustrates the end-to-end ingestion pipeline: parsing multi-document PDFs, semantic chunking, Gemini dense vector generation with retry/jitter, and transactional chunk replacement in PostgreSQL `pgvector`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as System Administrator / CLI
+    participant Ctrl as RagIngestionController
+    participant IngestSvc as FundDocumentIngestionService
+    participant Parser as PdfDocumentParserService (PDFBox 3.x)
+    participant Chunker as DocumentChunkingService
+    participant EmbedSvc as GeminiEmbeddingService
+    participant GeminiAPI as Google Gemini API (text-embedding-004)
+    participant Repo as FundDocumentEmbeddingRepository
+    participant PG as PostgreSQL (pgvector)
+
+    Admin->>Ctrl: POST /java-wtc-api/v1/rag/ingest/corpus
+    activate Ctrl
+    Ctrl->>IngestSvc: ingestCorpusDirectory()
+    activate IngestSvc
+
+    loop For each PDF in assets/rag-sources/{factsheets, sids, riskometer, expenses}
+        IngestSvc->>Parser: extractPages(pdfFile)
+        activate Parser
+        Parser-->>IngestSvc: List<ExtractedPdfPage> (pageNumber, cleanText)
+        deactivate Parser
+
+        IngestSvc->>Chunker: chunkDocumentPages(pages, filename, fundName, isin)
+        activate Chunker
+        Note over Chunker: Splits at natural paragraphs (~1,200 chars)<br/>with 200 char overlapping sliding window
+        Chunker-->>IngestSvc: List<ProcessedChunk> (text, index, metadataJson)
+        deactivate Chunker
+
+        loop For each ProcessedChunk
+            IngestSvc->>EmbedSvc: getEmbedding(chunkText)
+            activate EmbedSvc
+            EmbedSvc->>GeminiAPI: POST /models/text-embedding-004:embedContent
+            activate GeminiAPI
+            alt HTTP 200 OK
+                GeminiAPI-->>EmbedSvc: float[768] vector
+            else HTTP 429 Rate Limit / 5xx Server Error
+                Note over EmbedSvc: Retry with exponential backoff & randomized jitter (±20%)
+                EmbedSvc->>GeminiAPI: Retry attempt
+                GeminiAPI-->>EmbedSvc: float[768] vector
+            else Offline / Unconfigured Key
+                Note over EmbedSvc: Fallback to deterministic normalized 768-dim hash vector
+                EmbedSvc-->>EmbedSvc: generateDeterministicEmbedding(chunkText)
+            end
+            deactivate GeminiAPI
+            EmbedSvc-->>IngestSvc: float[768] embedding
+            deactivate EmbedSvc
+        end
+
+        Note over IngestSvc,PG: Enforce Idempotency in @Transactional Scope
+        IngestSvc->>Repo: deleteByIsinAndDocumentType(isin, docType)
+        Repo->>PG: DELETE FROM fund_document_embeddings WHERE isin = ? AND document_type = ?
+        IngestSvc->>Repo: saveAll(entities)
+        Repo->>PG: INSERT INTO fund_document_embeddings (isin, chunk_text, embedding, ...)
+    end
+
+    IngestSvc-->>Ctrl: IngestionSummary (filesProcessed, totalChunks, durationMs)
+    deactivate IngestSvc
+    Ctrl-->>Admin: HTTP 200 OK (IngestionSummary JSON)
+    deactivate Ctrl
+```
+
+#### 5.2 Flowchart: Candidate-Grounded Hybrid Retrieval Pipeline
+Illustrates the candidate-constrained vector retrieval flow, preventing LLM hallucinations by restricting searches exclusively to portfolio-eligible schemes.
+
+```mermaid
+flowchart TD
+    UserQuery["User Investment Query / Portfolio Rebalancing Context"] --> FilterCandidates["1. Candidate Fund Filtering<br/>(Extract ISINs from Eligible Funds in Client Risk Category)"]
+    
+    FilterCandidates --> EmbedQuery["2. Query Vector Generation<br/>(Gemini text-embedding-004: 768 Dimensions)"]
+    
+    EmbedQuery --> VectorSearch["3. Candidate-Constrained pgvector Search<br/>WHERE isin IN (candidateIsins)"]
+    
+    VectorSearch --> CosineSim["4. Cosine Similarity Calculation<br/>1 - (chunk_embedding <=> query_embedding)"]
+    
+    CosineSim --> QualityGate{"5. Quality Gate<br/>Similarity >= 0.65?"}
+    
+    QualityGate -- "Yes (High Relevance)" --> GroundedContext["6. Build Grounded LLM Prompt<br/>(Top-K Authentic Factsheet/SID Excerpts + ISIN Citations)"]
+    QualityGate -- "No (Low Relevance / Empty)" --> FallbackNotice["6. Defensive Degradation<br/>(Inform user: 'No sufficiently relevant fund disclosures found')"]
+    
+    GroundedContext --> CopilotReasoning["7. Multi-Agent Copilot Synthesis<br/>(Strictly Fact-Grounded Recommendation Proposal)"]
+```
+
+---
+
+### 6. Platform Resilience, Retries with Jitter & Telemetry Architecture
+
+#### 6.1 Sequence Diagram: Bounded Exponential Backoff with Randomized Jitter
+Models client-side retry mechanics across upstream dependencies (AWS S3, Gemini AI API) to prevent the thundering herd effect.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Caller as Domain Service (S3Service / GeminiEmbeddingService)
+    participant ResProps as ResilienceProperties / resilienceConfig
+    participant Target as Upstream API (AWS S3 / Gemini API)
+
+    Caller->>Target: Initial Invocation (Attempt 0)
+    activate Target
+    Target-->>Caller: 429 Too Many Requests / 503 Service Unavailable
+    deactivate Target
+
+    Note over Caller: Check operation idempotency & retryable status
+    Caller->>ResProps: calculateBackoffWithJitter(attempt=0, policy)
+    activate ResProps
+    Note over ResProps: rawDelay = min(maxDelay, baseDelay * 2^0)<br/>jitterFactor = 1.0 + random(-jitterPct, +jitterPct)<br/>delay = rawDelay * jitterFactor
+    ResProps-->>Caller: delayMs (e.g. 480ms)
+    deactivate ResProps
+
+    Note over Caller: Non-blocking sleep for delayMs
+
+    Caller->>Target: Retry Invocation (Attempt 1)
+    activate Target
+    alt Upstream Recovered
+        Target-->>Caller: HTTP 200 OK (Response Payload)
+        Note over Caller: Record success metric in Prometheus histogram
+    else Transient Failure Persists & attempt < maxRetries
+        Target-->>Caller: 503 Service Unavailable
+        Note over Caller: Calculate next backoff with jitter (e.g. 1040ms) and retry
+    else Exhausted maxRetries
+        Target-->>Caller: Failure Response
+        Note over Caller: Logger-before-error: Log fatal failure with context<br/>Record failure counter in Prometheus<br/>Return defensive fallback or propagate AppError
+    end
+    deactivate Target
+```
+
+#### 6.2 Dataflow Diagram: Full-Stack Prometheus Observability Architecture
+Illustrates metric instrumentation across both Java and Node.js runtimes, collected centrally by Prometheus.
+
+```mermaid
+flowchart LR
+    subgraph JavaRuntime["Java Spring Boot Backend (Port 8080)"]
+        J_HTTP["Spring WebMVC Filters"] -->|http_server_requests_seconds| Micrometer["Micrometer Registry"]
+        J_S3["S3Service"] -->|s3_operation_duration_seconds<br/>s3_operation_failures_total| Micrometer
+        J_RAG["GeminiEmbeddingService"] -->|rag_embedding_latency_seconds<br/>rag_embedding_calls_total| Micrometer
+        Micrometer --> Actuator["/actuator/prometheus"]
+    end
+
+    subgraph NodeRuntime["Node.js Express Backend (Port 5000)"]
+        N_HTTP["Express Middleware"] -->|http_request_duration_seconds| PromClient["prom-client Registry"]
+        N_S3["s3Service"] -->|s3_operation_duration_seconds<br/>s3_operation_failures_total| PromClient
+        N_DB["Mongoose Events"] -->|nodejs_active_handles| PromClient
+        PromClient --> MetricsEndpoint["/api/v1/metrics"]
+    end
+
+    subgraph Monitoring["Observability Cluster"]
+        Prometheus[("Prometheus Server")]
+        Grafana["Grafana Dashboards"]
+    end
+
+    Actuator -->|"Scrape (15s interval)"| Prometheus
+    MetricsEndpoint -->|"Scrape (15s interval)"| Prometheus
+    Prometheus --> Grafana
+```
