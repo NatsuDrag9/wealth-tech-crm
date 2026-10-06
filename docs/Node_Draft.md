@@ -160,8 +160,8 @@ flowchart TD
    - Gemini mirrors the tag in its response, and our backend decrypts it on the fly.
    - **Memory used: Zero bytes.** No maps, no caches, completely portable across Node.js instances, with zero memory leak risk. Trade-off: Small CPU cost for AES encryption/decryption. This is the recommended standard when high traffic and crypto resources are available.
 
-### RAG Evaluation Benchmark (Autoevals with Gemini)
-We chose **Autoevals** for TypeScript-native RAG evaluation in CI/CD, configuring Google Gemini (`gemini-2.0-flash` via `OPENAI_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"` and `GEMINI_API_KEY`) to run model-graded `Faithfulness` and `ContextPrecision` assertions with zero C++ native dependencies.
+### RAG Evaluation Benchmark (Native Test Suite)
+We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGenerationService` (Gemini 2.0 Flash) directly inside Vitest over external frameworks (Ragas / Promptfoo / Autoevals). This eliminates external framework dependencies and native C++ build overhead while enabling seamless CI/CD test execution with offline fallback support.
 
 ---
 
@@ -176,4 +176,4 @@ We chose **Autoevals** for TypeScript-native RAG evaluation in CI/CD, configurin
 | **`multer`** | `^1.4.5-lts.1` | **In-Memory File Upload Streaming (`clientRoutes.ts`, `portfolioRoutes.ts`)**: Multipart/form-data middleware configured with `memoryStorage()` (10MB/15MB payload constraints). Feeds uploaded Excel sheets and eCAS statements directly into RAM buffers for S3 streaming without creating temporary files on disk. |
 | **`jsonwebtoken` & `bcryptjs`** | `^9.0.2` / `^2.4.3` | **Authentication & Password Security (`jwt.ts`, `authController.ts`)**: Manages one-way salted hashing for employee passwords and signs minimalist "Slim" JWTs (containing only email) to enforce real-time, stateful database permission checks on every protected request. |
 | **`mongoose`** | `^8.3.4` | **Document Modeling & Subdocument Embedding**: Manages schema validation, compound indexing, and lifecycle timestamps. Leveraged for embedded document modeling (`PortfolioReview.entries`, `PortfolioRecommendation.funds`, `RiskAssessment.answers`) to enable atomic updates and eliminate SQL join overhead. Global `toJSON` hooks ensure automatic data sanitization (`_id` to `id`, password suppression). |
-| **`autoevals`** | `^0.3.0` (dev) | **RAG Evaluation Harness**: Pure TypeScript evaluators (`Faithfulness`, `ContextPrecision`, `AnswerRelevancy`) scoring RAG responses against golden datasets using Gemini 2.0 Flash via Google's OpenAI-compatible endpoint. |
+| **`vitest`** | `^2.1.9` (dev) | **Unit Testing & RAG Benchmark Harness**: Fast TypeScript test runner executing deterministic unit suites and native RAG evaluation benchmarks (evaluating Faithfulness, Answer Relevance, and Context Precision via Gemini 2.0 Flash). |
