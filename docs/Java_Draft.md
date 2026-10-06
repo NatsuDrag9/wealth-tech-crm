@@ -262,7 +262,37 @@ List<FundDocumentEvidenceProjection> findTopKRelevantEvidence(
         @Param("limit") int limit);
 ```
 
-The resulting `FundDocumentEvidenceProjection` records are evaluated against the Evidence Quality Gate (`rag_similarity_score` and `evidence_consistency_score`) before being synthesized into grounded recommendations.
+###### D. Graceful Upstream Quota Handling & Model Cascading
+To prevent service failure or deceptive offline mocks when external AI APIs hit rate limits or daily quotas:
+1. **Differentiated Error Handling (429 vs 503)**:
+   - **HTTP 503 / 5xx (Transient Load Spikes)**: Handled by retrying the same model with exponential backoff and randomized jitter (`ResilienceProperties`: `maxRetries = 5`, `baseDelayMs = 2000`).
+   - **HTTP 429 (Quota / Rate-Limit Exhaustion)**: Retrying the same model is strictly forbidden to prevent burning retry budgets against exhausted quotas. The service immediately triggers an ordered **Model Cascade**:
+     $$\text{gemini-3.8-flash (Primary)} \longrightarrow \text{gemini-3.5-flash (Secondary)} \longrightarrow \text{gemini-flash-latest (Tertiary)}$$
+2. **Honest Degradation (No Fabricated Offline Text)**:
+   - If all models in the cascade are exhausted, `GeminiGenerationService` returns `[SYNTHESIS_UNAVAILABLE: ...]`.
+   - `RagSynthesisService` detects this sentinel, sets `isGrounded = false` and `message = "AI generation capacity reached; authentic disclosure evidence provided for manual review."` on `RagQueryResponse`.
+   - The user receives authentic retrieved evidence chunks with inline source tags without hallucinated natural language text.
+
+###### E. Conversational Dialogue Memory Architecture
+
+```mermaid
+flowchart TD
+    UserQuery["Advisor Turn N (query, conversationId)"] --> PiiTokenize["1. PII Tokenization Gateway"]
+    PiiTokenize --> FetchHistory["2. Fetch Prior Turns (Approach A: Window Buffer)\nORDER BY turn_index ASC LIMIT maxHistoryTurns (Default: 3)"]
+    FetchHistory --> HybridRetrieval["3. Candidate-Constrained Hybrid Retrieval"]
+    HybridRetrieval --> QualityGate{"4. Evidence Quality Gate"}
+    QualityGate -- "Pass" --> GroundedPrompt["5. Assemble Grounded Prompt\n[PRIOR TURNS] + [CURRENT QUERY] + [SEBI EVIDENCE]"]
+    GroundedPrompt --> LlmSynthesis["6. Gemini Generation (with Cascade Fallback)"]
+    LlmSynthesis --> PiiRehydrate["7. Backward PII Rehydration"]
+    PiiRehydrate --> SaveTurn["8. Persist Turn in rag_conversation_turns (PostgreSQL)"]
+    SaveTurn --> Response["9. Return RagQueryResponse (answer, conversationId, turnIndex)"]
+```
+
+1. **Approach A (Window Buffer Memory) — Chosen Implementation**:
+   - **Why Approach A was chosen**: Simplicity, deterministic execution, and zero extra infrastructure requirements. By storing sequentially indexed dialogue turns in `rag_conversation_turns` (`conversation_id`, `turn_index`, `user_query`, `synthesized_answer`, `is_grounded`) and sliding a window of the last $N$ turns (default `rag.conversation.max-history-turns: 3`) directly into the LLM prompt, advisors can ask contextual follow-ups ("How does its exit load compare to the one we just discussed?") without requiring complex graph or memory agent dependencies.
+2. **Alternative Conversational Memory Approaches Considered**:
+   - **Approach B — Rolling Summarizer Memory (LangChain `ConversationSummaryMemory` pattern)**: A background or synchronous LLM call condenses older turns into a running text summary once the dialogue exceeds $N$ turns. This keeps prompt token counts strictly bounded over long sessions at the cost of an additional LLM generation call per turn.
+   - **Approach C — Vector RAG-on-History**: Each dialogue turn is converted into a vector embedding and stored in a conversational vector index, allowing similarity search across past dialogue turns. This is ideal for multi-day, multi-topic advisory dialogues spanning dozens of turns, but introduces vector index overhead for short CRM sessions.
 
 ---
 
