@@ -8,6 +8,7 @@ public record RagQueryRequest(
         @NotBlank(message = "Query text is required")
         String query,
 
+        String conversationId,
         Long clientId,
         List<String> candidateIsins,
         Integer topK,

@@ -44,6 +44,8 @@ class RagSynthesisServiceTest {
     private PiiProtectionGateway piiProtectionGateway;
     @Mock
     private ClientRepository clientRepository;
+    @Mock
+    private com.wealthtech.crm.modules.portfolioreview.repository.RagConversationTurnRepository turnRepository;
 
     private SimpleMeterRegistry meterRegistry;
     private RagSynthesisService synthesisService;
@@ -57,10 +59,12 @@ class RagSynthesisServiceTest {
                 generationService,
                 piiProtectionGateway,
                 clientRepository,
+                turnRepository,
                 meterRegistry,
                 5,
                 0.65,
-                0.1
+                0.1,
+                3
         );
     }
 
@@ -69,6 +73,7 @@ class RagSynthesisServiceTest {
     void testDefensiveDegradationOnQualityGateFailure() {
         RagQueryRequest request = new RagQueryRequest(
                 "Tell me about unapproved scheme",
+                "conv-test-1",
                 null,
                 List.of("INF179K01BE2"),
                 5,
@@ -108,6 +113,7 @@ class RagSynthesisServiceTest {
     void testGroundedSynthesisWithCitationsAndPiiRehydration() {
         RagQueryRequest request = new RagQueryRequest(
                 "What is the TER of HDFC fund for Rahul Sharma?",
+                "conv-test-2",
                 1L,
                 List.of("INF179K01BE2"),
                 5,

@@ -4,6 +4,8 @@ import java.util.List;
 
 public record RagQueryResponse(
         String query,
+        String conversationId,
+        Integer turnIndex,
         String synthesizedAnswer,
         boolean isGrounded,
         boolean queryRefined,

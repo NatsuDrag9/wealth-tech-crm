@@ -2,9 +2,11 @@ package com.wealthtech.crm.modules.portfolioreview.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.wealthtech.crm.infrastructure.ai.GeminiGenerationService;
 import com.wealthtech.crm.infrastructure.ai.security.PiiProtectionGateway;
@@ -13,6 +15,8 @@ import com.wealthtech.crm.modules.customer.entity.Client;
 import com.wealthtech.crm.modules.customer.entity.ClientProfile;
 import com.wealthtech.crm.modules.customer.repository.ClientRepository;
 import com.wealthtech.crm.modules.portfolioreview.dto.*;
+import com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn;
+import com.wealthtech.crm.modules.portfolioreview.repository.RagConversationTurnRepository;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -22,13 +26,15 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Service orchestrating grounded RAG query synthesis:
  * 1. Executes bidirectional PII tokenization to protect client identity before LLM ingestion.
- * 2. Executes candidate-constrained retrieval.
- * 3. Evaluates the Evidence Quality Gate.
- * 4. Triggers automated query refinement on quality gate failures.
- * 5. Assembles grounded context with explicit source anchors.
- * 6. Synthesizes factual natural-language answers via Gemini 2.0 Flash.
- * 7. Rehydrates surrogate PII tokens into the final response before delivery.
- * 8. Records granular end-to-end latency breakdowns.
+ * 2. Injects conversational history window (Approach A - Window Buffer Memory).
+ * 3. Executes candidate-constrained retrieval.
+ * 4. Evaluates the Evidence Quality Gate.
+ * 5. Triggers automated query refinement on quality gate failures.
+ * 6. Assembles grounded context with explicit source anchors and prior conversation turns.
+ * 7. Synthesizes factual natural-language answers via Google Gemini.
+ * 8. Rehydrates surrogate PII tokens into the final response before delivery.
+ * 9. Persists conversation turns for multi-turn dialogue continuity.
+ * 10. Records granular end-to-end latency breakdowns.
  */
 @Service
 @Slf4j
@@ -39,11 +45,13 @@ public class RagSynthesisService {
     private final GeminiGenerationService generationService;
     private final PiiProtectionGateway piiProtectionGateway;
     private final ClientRepository clientRepository;
+    private final RagConversationTurnRepository turnRepository;
     private final MeterRegistry meterRegistry;
 
     private final int defaultTopK;
     private final double defaultSimilarityThreshold;
     private final double defaultTemperature;
+    private final int maxHistoryTurns;
 
     public RagSynthesisService(
             RagRetrievalService retrievalService,
@@ -51,19 +59,23 @@ public class RagSynthesisService {
             GeminiGenerationService generationService,
             PiiProtectionGateway piiProtectionGateway,
             ClientRepository clientRepository,
+            RagConversationTurnRepository turnRepository,
             MeterRegistry meterRegistry,
             @Value("${rag.top-k:5}") int defaultTopK,
             @Value("${rag.similarity-threshold:0.65}") double defaultSimilarityThreshold,
-            @Value("${gemini.generation-temperature:0.1}") double defaultTemperature) {
+            @Value("${gemini.generation-temperature:0.1}") double defaultTemperature,
+            @Value("${rag.conversation.max-history-turns:3}") int maxHistoryTurns) {
         this.retrievalService = retrievalService;
         this.queryRefinerService = queryRefinerService;
         this.generationService = generationService;
         this.piiProtectionGateway = piiProtectionGateway;
         this.clientRepository = clientRepository;
+        this.turnRepository = turnRepository;
         this.meterRegistry = meterRegistry;
         this.defaultTopK = defaultTopK;
         this.defaultSimilarityThreshold = defaultSimilarityThreshold;
         this.defaultTemperature = defaultTemperature;
+        this.maxHistoryTurns = maxHistoryTurns;
     }
 
     /**
@@ -72,6 +84,7 @@ public class RagSynthesisService {
      * @param request user query request parameters
      * @return RagQueryResponse with answer, citations, evidence, and latency metrics
      */
+    @Transactional
     public RagQueryResponse queryAndSynthesize(RagQueryRequest request) {
         long totalStartTime = System.currentTimeMillis();
 
@@ -79,7 +92,24 @@ public class RagSynthesisService {
         double threshold = request.resolvedSimilarityThreshold(defaultSimilarityThreshold);
         double temperature = request.resolvedTemperature(defaultTemperature);
 
-        // 0. Forward Pass: Bidirectional PII Minimization & Tokenization
+        // 0. Resolve Conversation Session & Fetch Prior History Window (Approach A)
+        String conversationId = (request.conversationId() != null && !request.conversationId().isBlank())
+                ? request.conversationId().trim()
+                : UUID.randomUUID().toString();
+
+        List<RagConversationTurn> priorTurns = (turnRepository != null)
+                ? turnRepository.findByConversationIdOrderByTurnIndexAsc(conversationId)
+                : List.of();
+
+        // Keep last N turns within the configured window buffer
+        List<RagConversationTurn> historyWindow = (priorTurns.size() > maxHistoryTurns)
+                ? priorTurns.subList(priorTurns.size() - maxHistoryTurns, priorTurns.size())
+                : priorTurns;
+
+        Integer maxTurn = (turnRepository != null) ? turnRepository.findMaxTurnIndexByConversationId(conversationId) : null;
+        int nextTurnIndex = (maxTurn != null) ? maxTurn + 1 : 1;
+
+        // 1. Forward Pass: Bidirectional PII Minimization & Tokenization
         Client client = (request.clientId() != null)
                 ? clientRepository.findByIdWithRelations(request.clientId()).orElse(null)
                 : null;
@@ -87,7 +117,7 @@ public class RagSynthesisService {
 
         PiiTokenizationResult tokenizedQuery = piiProtectionGateway.tokenize(request.query(), client, profile);
 
-        // 1. Initial Candidate-Constrained Retrieval
+        // 2. Initial Candidate-Constrained Retrieval
         long retrievalStartTime = System.currentTimeMillis();
         RagRetrievalRequest retrievalReq = new RagRetrievalRequest(
                 request.query(),
@@ -103,7 +133,7 @@ public class RagSynthesisService {
 
         boolean queryWasRefined = false;
 
-        // 2. Query Refinement Loop on Quality Gate Failure
+        // 3. Query Refinement Loop on Quality Gate Failure
         if (!retrievalResponse.isSufficient()) {
             log.info("Quality gate failed for query '{}'. Initiating query refinement loop...", request.query());
             RagQueryRefinerService.RefinedQueryResult refinedResult = queryRefinerService.refineQuery(request.query());
@@ -131,7 +161,7 @@ public class RagSynthesisService {
             }
         }
 
-        // 3. Defensive Degradation if Evidence Remains Insufficient
+        // 4. Defensive Degradation if Evidence Remains Insufficient
         if (!retrievalResponse.isSufficient() || retrievalResponse.evidenceChunks().isEmpty()) {
             Counter.builder("rag_synthesis_total")
                     .tag("grounded", "false")
@@ -144,8 +174,12 @@ public class RagSynthesisService {
                     threshold, retrievalResponse.ragSimilarityScore()
             );
 
+            persistTurn(conversationId, nextTurnIndex, request.query(), defensiveAnswer, false, request.clientId());
+
             return new RagQueryResponse(
                     request.query(),
+                    conversationId,
+                    nextTurnIndex,
                     defensiveAnswer,
                     false,
                     queryWasRefined,
@@ -159,7 +193,7 @@ public class RagSynthesisService {
             );
         }
 
-        // 4. Grounded Context Assembly
+        // 5. Grounded Context Assembly (Evidence + Window Buffer Conversation History)
         String systemInstruction = """
             You are an expert SEBI-compliant Wealth Management Copilot for financial advisors.
             Your task is to answer the user's investment query using EXCLUSIVELY the provided Grounded Evidence.
@@ -168,11 +202,16 @@ public class RagSynthesisService {
             2. NEVER extrapolate, assume, or invent statistics not explicitly stated in the evidence.
             3. If the evidence does not fully disclose an answer to a specific sub-question, explicitly state that official disclosures do not mention it.
             4. Keep the tone professional, objective, and compliant with financial advisory standards.
+            5. When conversation history is provided, use it to resolve contextual follow-up references accurately.
             """;
 
-        String groundedPrompt = assembleGroundedPrompt(tokenizedQuery.sanitizedText(), retrievalResponse.evidenceChunks());
+        String groundedPrompt = assembleGroundedPrompt(
+                tokenizedQuery.sanitizedText(),
+                retrievalResponse.evidenceChunks(),
+                historyWindow
+        );
 
-        // 5. LLM Synthesis via Gemini 2.0 Flash
+        // 6. LLM Synthesis via Gemini (with automatic model cascading on 429)
         long synthesisStartTime = System.currentTimeMillis();
         Timer.Sample synthesisTimer = Timer.start(meterRegistry);
 
@@ -184,22 +223,34 @@ public class RagSynthesisService {
 
         long synthesisLatencyMs = System.currentTimeMillis() - synthesisStartTime;
         synthesisTimer.stop(Timer.builder("rag_synthesis_duration_seconds").register(meterRegistry));
+
+        // 7. Check for Graceful Unavailable Sentinel vs Grounded Answer
+        boolean isGrounded = !GeminiGenerationService.isSynthesisUnavailable(synthesizedAnswer);
         Counter.builder("rag_synthesis_total")
-                .tag("grounded", "true")
+                .tag("grounded", String.valueOf(isGrounded))
                 .register(meterRegistry)
                 .increment();
 
-        // 6. Backward Pass: De-tokenization / Re-hydration
+        // 8. Backward Pass: De-tokenization / Re-hydration
         String rehydratedAnswer = tokenizedQuery.rehydrate(synthesizedAnswer);
 
-        // 7. Format Citations List
+        // 9. Persist Dialogue Turn for Multi-Turn Context (Approach A)
+        persistTurn(conversationId, nextTurnIndex, request.query(), rehydratedAnswer, isGrounded, request.clientId());
+
+        // 10. Format Citations List
         List<String> citations = extractCitations(retrievalResponse.evidenceChunks());
         long totalLatencyMs = System.currentTimeMillis() - totalStartTime;
 
+        String statusMessage = isGrounded
+                ? String.format("Successfully synthesized grounded answer backed by %d authentic disclosure sources.", citations.size())
+                : "AI generation capacity reached; authentic disclosure evidence provided for manual review.";
+
         return new RagQueryResponse(
                 request.query(),
+                conversationId,
+                nextTurnIndex,
                 rehydratedAnswer,
-                true,
+                isGrounded,
                 queryWasRefined,
                 retrievalResponse.ragSimilarityScore(),
                 citations,
@@ -207,13 +258,47 @@ public class RagSynthesisService {
                 retrievalLatencyMs,
                 synthesisLatencyMs,
                 totalLatencyMs,
-                String.format("Successfully synthesized grounded answer backed by %d authentic disclosure sources.", citations.size())
+                statusMessage
         );
     }
 
-    private String assembleGroundedPrompt(String userQuery, List<RetrievedEvidenceChunk> evidenceChunks) {
+    private void persistTurn(String conversationId, int turnIndex, String query, String answer, boolean isGrounded, Long clientId) {
+        if (turnRepository != null) {
+            try {
+                RagConversationTurn turn = RagConversationTurn.builder()
+                        .conversationId(conversationId)
+                        .turnIndex(turnIndex)
+                        .userQuery(query)
+                        .synthesizedAnswer(answer)
+                        .isGrounded(isGrounded)
+                        .clientId(clientId)
+                        .build();
+                turnRepository.save(turn);
+            } catch (Exception e) {
+                log.warn("Failed to persist conversation turn for conversationId '{}': {}", conversationId, e.getMessage());
+            }
+        }
+    }
+
+    private String assembleGroundedPrompt(
+            String userQuery,
+            List<RetrievedEvidenceChunk> evidenceChunks,
+            List<RagConversationTurn> historyWindow) {
+
         StringBuilder sb = new StringBuilder();
-        sb.append("### USER QUERY\n");
+
+        // Inject prior conversation turns (Approach A: Window Buffer Memory)
+        if (historyWindow != null && !historyWindow.isEmpty()) {
+            sb.append("### PRIOR CONVERSATION HISTORY\n");
+            for (RagConversationTurn turn : historyWindow) {
+                sb.append(String.format("User: %s\nAdvisor Copilot: %s\n\n",
+                        turn.getUserQuery().trim(),
+                        turn.getSynthesizedAnswer().trim()
+                ));
+            }
+        }
+
+        sb.append("### CURRENT USER QUERY\n");
         sb.append(userQuery).append("\n\n");
         sb.append("### GROUNDED EVIDENCE (AUTHENTIC SEBI DISCLOSURE DOCUMENTS)\n");
 
