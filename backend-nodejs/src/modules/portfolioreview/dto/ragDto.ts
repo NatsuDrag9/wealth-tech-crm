@@ -34,6 +34,7 @@ export interface RagRetrievalResponseDto {
 
 export interface RagQueryRequestDto {
   query: string;
+  conversationId?: string;
   clientId?: string;
   candidateIsins?: string[];
   topK?: number;
@@ -43,6 +44,8 @@ export interface RagQueryRequestDto {
 
 export interface RagQueryResponseDto {
   query: string;
+  conversationId: string;
+  turnIndex: number;
   answer: string;
   isGrounded: boolean;
   queryWasRefined: boolean;

@@ -69,7 +69,7 @@ export class RagController {
    * Executes end-to-end PII-protected grounded query synthesis with Gemini 2.0 Flash.
    */
   public async queryAndSynthesize(req: Request, res: Response): Promise<Response> {
-    const { query, clientId, candidateIsins, topK, similarityThreshold, temperature } = req.body;
+    const { query, conversationId, clientId, candidateIsins, topK, similarityThreshold, temperature } = req.body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       throw new AppError('Query text is required', 400);
@@ -77,6 +77,7 @@ export class RagController {
 
     const requestDto: RagQueryRequestDto = {
       query: query.trim(),
+      conversationId: conversationId ? String(conversationId).trim() : undefined,
       clientId: clientId ? String(clientId) : undefined,
       candidateIsins: Array.isArray(candidateIsins) ? candidateIsins : undefined,
       topK: topK !== undefined ? Number(topK) : undefined,

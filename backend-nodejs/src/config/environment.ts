@@ -27,6 +27,10 @@ export const config = {
     apiBaseUrl: process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models',
     embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
     generationModel: process.env.GEMINI_GENERATION_MODEL || 'gemini-2.0-flash',
+    fallbackModels: (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash,gemini-flash-latest')
+      .split(',')
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0),
     generationTemperature: parseFloat(process.env.GEMINI_GENERATION_TEMPERATURE || '0.1'),
     connectTimeoutMs: parseInt(process.env.GEMINI_CONNECT_TIMEOUT_MS || '15000', 10),
     requestTimeoutMs: parseInt(process.env.GEMINI_REQUEST_TIMEOUT_MS || '30000', 10),
@@ -36,6 +40,7 @@ export const config = {
   rag: {
     topK: parseInt(process.env.RAG_TOP_K || '5', 10),
     similarityThreshold: parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.65'),
+    maxHistoryTurns: parseInt(process.env.RAG_MAX_HISTORY_TURNS || '3', 10),
     sourcesPath: process.env.RAG_SOURCES_PATH || '../assets/rag-sources',
   },
 };

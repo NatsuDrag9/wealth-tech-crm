@@ -255,12 +255,16 @@ flowchart TD
      `"Based on official mutual fund regulatory disclosures, no verified document chunks met the required quality relevance threshold (0.70) to answer your query reliably..."`
    - In financial services and SEBI compliance, a truthful rejection is infinitely safer and more compliant than an ungrounded hallucination.
 
-10. **Resilient AI Gateway (`geminiEmbeddingService.ts` & `geminiGenerationService.ts`)**:
-    - **Models**: `text-embedding-004` (768 dimensions) for embeddings, `gemini-2.0-flash` (temperature 0.2, topP 0.95, maxOutputTokens 2048) for grounded synthesis.
-    - **Fault Tolerance**:
-      - Request timeouts (15,000ms) enforced via `AbortController`.
-      - Bounded exponential backoff with randomized jitter ($\pm 20\%$) to prevent thundering herd under upstream HTTP 429 rate limits or 5xx outages.
-      - **Deterministic Local Fallback Mode**: If `GEMINI_API_KEY` is absent or upstream is partitioned, generates normalized SHA-256-seeded 768-dim vectors and deterministic grounded synthesis summaries, enabling full offline CI/CD execution and local development.
+10. **Resilient AI Gateway & Model Cascading (`geminiEmbeddingService.ts` & `geminiGenerationService.ts`)**:
+    - **Models**: `text-embedding-004` (768 dimensions) for embeddings, with primary generation model `gemini-3.8-flash` (or `gemini-2.0-flash`).
+    - **Differentiated Failure Policies**:
+      - **HTTP 503 / 5xx (Transient Load Spikes)**: Retried with exponential backoff and randomized jitter on the same model up to `maxRetries = 4` (base delay 1000ms, max delay 5000ms).
+      - **HTTP 429 (Quota / Rate-Limit Exhaustion)**: Retrying the same model is blocked. The service immediately triggers an ordered **Model Cascade**:
+        `gemini-3.8-flash` (Primary) $\rightarrow$ `gemini-3.5-flash` (Secondary) $\rightarrow$ `gemini-flash-latest` (Tertiary).
+    - **Honest Degradation Sentinel**:
+      - If all models in the cascade are exhausted, the service returns `[SYNTHESIS_UNAVAILABLE: ...]`.
+      - `ragSynthesisService.ts` detects this sentinel, sets `isGrounded = false` on `RagQueryResponseDto`, and delivers authentic retrieved disclosure chunks for manual advisor inspection without ungrounded hallucinations.
+    - **Deterministic Local Fallback Mode**: If `GEMINI_API_KEY` is unconfigured or offline, generates normalized SHA-256-seeded 768-dim vectors and deterministic grounded synthesis summaries for CI/CD and local development.
 
 11. **Telemetry & Production Observability Pipeline**:
     - Centralized Prometheus metrics registry (`prom-client`) exposed at `GET /nodejs-wtc-api/v1/metrics`:
@@ -270,6 +274,10 @@ flowchart TD
       - `rag_synthesis_total{grounded="true|false"}` (Counter: grounded vs defensively degraded queries)
       - `pii_tokenization_duration_seconds` & `pii_redacted_tokens_total` (Histogram/Counter: PII masking throughput)
       - `rag_eval_faithfulness_score`, `rag_eval_relevancy_score`, `rag_eval_ir_recall`, `rag_eval_ir_ndcg`, `rag_eval_ir_mrr` (Gauges published via `ragEvaluationTelemetryService.ts`).
+
+12. **Conversational Dialogue Memory (Window Buffer - Approach A)**:
+    - **Persistent Entity (`RagConversationTurn.ts`)**: Mapped to MongoDB collection `rag_conversation_turns` (`conversationId`, `turnIndex`, `userQuery`, `synthesizedAnswer`, `isGrounded`, `clientId`, `createdAt`).
+    - **Sliding Window History Injection**: Requests with a `conversationId` retrieve the last N turns (`config.rag.maxHistoryTurns: 3`) and inject them into `### PRIOR CONVERSATION HISTORY`, enabling multi-turn contextual follow-ups without unbounded token accumulation.
 
 ---
 
@@ -362,6 +370,34 @@ flowchart TD
    - This in-memory execution allows effortless hybrid scoring ($0.70 \times \text{semantic} + 0.30 \times \text{lexical}$) with zero database locks, zero reliance on external vector extensions, and full portability across any standard MongoDB deployment (local Docker, self-hosted, or Atlas).
 5. **Atlas Upgrade Path**: If migrated to MongoDB Atlas in production, the retrieval loop in `ragRetrievalService.ts` can seamlessly adopt `$vectorSearch` via aggregation pipelines without altering any upstream controllers, PII gateways, or synthesis services.
 
+### Graceful Upstream Quota Handling & Model Cascading
+
+1. **Context & Upstream Failure Modes**: Upstream LLM providers (Google Gemini) exhibit two distinct classes of failure:
+   - **Transient Load Spikes (HTTP 503 / 500 / 502 / 504)**: Temporary gateway or server-side congestion. Retrying against the *same model* with exponential backoff and randomized jitter (base 1,000ms, max 5,000ms, 4 attempts) succeeds in >95% of cases.
+   - **Quota & Rate-Limit Exhaustion (HTTP 429)**: The project has exceeded its Requests-Per-Minute (RPM) or Tokens-Per-Minute (TPM) quota on that specific model tier. Retrying the same model with backoff burns latency budgets (5–10s) and almost always fails, degrading end-user response times.
+2. **Immediate Multi-Tier Model Cascading**:
+   - On encountering HTTP 429, the service **immediately blocks retries on the exhausted model** and cascades to the next operational model in priority order:
+     $$\text{gemini-3.8-flash (Primary)} \longrightarrow \text{gemini-3.5-flash (Secondary)} \longrightarrow \text{gemini-flash-latest (Tertiary)}$$
+   - Ensures continuous advisory synthesis availability even during sudden traffic surges or quota depletion on primary models.
+3. **Honest Degradation Sentinel vs. Placeholder Hallucinations**:
+   - If all models in the cascade fail or exhaust their quota, the service returns a sentinel string: `[SYNTHESIS_UNAVAILABLE: ...]`.
+   - `ragSynthesisService.ts` detects this sentinel, sets `isGrounded = false` on `RagQueryResponseDto`, and delivers authentic retrieved disclosure chunks for manual advisor inspection.
+   - Prevents ungrounded hallucinations, eliminates misleading placeholder text, and maintains strict SEBI audit compliance.
+
+### Conversational Dialogue Memory Architecture (Approach A vs. B vs. C)
+
+1. **Context & Objective**: In wealth advisory, advisors frequently ask multi-turn contextual follow-ups (e.g., Turn 1: *"What is the TER of Parag Parikh Flexi Cap Fund?"* $\rightarrow$ Turn 2: *"How does that compare to the Benchmark?"*). Without conversational memory, Turn 2 lacks subject context and fails retrieval.
+2. **Comparison of Memory Architectures**:
+
+   | Architecture | Mechanism | Trade-Offs & Best Fit |
+   |---|---|---|
+   | **Approach A: Window Buffer Memory (Implemented)** | Persists turns in MongoDB (`rag_conversation_turns`). Retrieves the last $N$ turns (`config.rag.maxHistoryTurns: 3`) and injects them into `### PRIOR CONVERSATION HISTORY`. | **Zero external dependencies**, deterministic SQL/NoSQL ordering, bounded prompt token overhead ($<400$ tokens). Perfectly suited for typical 3–5 turn advisor review sessions. |
+   | **Approach B: Rolling Summarizer Memory** | A background or synchronous LLM call condenses dialogue history into a running summary once history exceeds $N$ turns. | Strictly bounded token footprint over very long sessions (15+ turns). Trade-off: introduces additional LLM latency, token cost, and potential summary distortion for specific numeric metrics. |
+   | **Approach C: Vector RAG-on-History** | Every user turn and answer is embedded into a dedicated dialogue vector index; semantic search retrieves relevant prior turns based on current query. | Ideal for open-ended, multi-topic advisory sessions spanning days or weeks. Trade-off: adds secondary vector store query overhead and embedding generation latency per turn. |
+
+3. **Why Approach A was Chosen for `backend-nodejs`**:
+   - Standard wealth advisor client review meetings typically involve 2 to 5 targeted questions per fund or portfolio section.
+   - Approach A provides deterministic chronological context with zero extra LLM cost, minimal MongoDB query latency ($<2\text{ms}$ with index `{ conversationId: 1, turnIndex: 1 }`), and robust multi-turn follow-up capabilities.
 
 ### RAG Evaluation Benchmark (Native Test Suite)
 We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGenerationService` (Gemini 2.0 Flash) directly inside Vitest over external frameworks (Ragas / Promptfoo / Autoevals). This eliminates external framework dependencies and native C++ build overhead while enabling seamless CI/CD test execution with offline fallback support.

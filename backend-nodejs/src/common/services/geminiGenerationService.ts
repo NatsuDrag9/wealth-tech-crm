@@ -5,14 +5,25 @@ import { logger } from '../utils/logger';
 import { ragGenerationCallsTotal, ragSynthesisDurationSeconds } from '../metrics/metrics';
 
 /**
- * Resilient Gemini 2.0 Flash Generation Service for Node.js.
- * Executes grounded natural-language synthesis with system guardrails,
- * exponential backoff, request timeouts, and deterministic local fallback.
+ * Resilient Google Gemini Generation Service for Node.js.
+ * Features:
+ * - Differentiated failure policies: transient 503/5xx retries with backoff+jitter; 429 triggers immediate model cascade
+ * - Model cascading: primary model -> gemini-3.5-flash -> gemini-flash-latest
+ * - Honest sentinel degradation when all models are exhausted
+ * - Deterministic local fallback for unconfigured/offline environments
+ * - Full Prometheus and Loki telemetry instrumentation
  */
 export class GeminiGenerationService {
+  /**
+   * Honest sentinel returned when all models (primary + fallbacks) are unavailable.
+   */
+  public static readonly SYNTHESIS_UNAVAILABLE_SENTINEL =
+    '[SYNTHESIS_UNAVAILABLE: The AI generation service is temporarily at capacity. The retrieved evidence chunks are available for manual review.]';
+
   private readonly apiKey: string;
   private readonly apiBaseUrl: string;
   private readonly generationModel: string;
+  private readonly fallbackModels: string[];
   private readonly defaultTemperature: number;
   private readonly connectTimeoutMs: number;
   private readonly requestTimeoutMs: number;
@@ -23,6 +34,10 @@ export class GeminiGenerationService {
     this.apiKey = config.gemini.apiKey.trim();
     this.apiBaseUrl = config.gemini.apiBaseUrl.trim().replace(/\/+$/, '');
     this.generationModel = config.gemini.generationModel.trim() || 'gemini-2.0-flash';
+    this.fallbackModels =
+      config.gemini.fallbackModels && config.gemini.fallbackModels.length > 0
+        ? config.gemini.fallbackModels
+        : ['gemini-3.5-flash', 'gemini-flash-latest'];
     this.defaultTemperature = config.gemini.generationTemperature;
     this.connectTimeoutMs = config.gemini.connectTimeoutMs;
     this.requestTimeoutMs = config.gemini.requestTimeoutMs;
@@ -31,8 +46,13 @@ export class GeminiGenerationService {
 
     if (this.isLiveKeyConfigured()) {
       logger.info(
-        { model: this.generationModel, baseUrl: this.apiBaseUrl, temperature: this.defaultTemperature },
-        'GeminiGenerationService initialized with live API key'
+        {
+          model: this.generationModel,
+          fallbacks: this.fallbackModels,
+          baseUrl: this.apiBaseUrl,
+          temperature: this.defaultTemperature,
+        },
+        'GeminiGenerationService initialized with live API key and model cascade'
       );
     } else {
       logger.info(
@@ -46,7 +66,19 @@ export class GeminiGenerationService {
   }
 
   /**
-   * Synthesizes an answer using Gemini 2.0 Flash based strictly on grounded evidence.
+   * Returns true if the answer represents the honest capacity unavailable sentinel.
+   */
+  public static isSynthesisUnavailable(answer?: string | null): boolean {
+    return typeof answer === 'string' && answer.startsWith('[SYNTHESIS_UNAVAILABLE:');
+  }
+
+  /**
+   * Synthesizes an answer using Gemini grounded generation based strictly on provided evidence.
+   * Resiliency & Fallback Strategy:
+   * 1. Attempt primary model (e.g. gemini-3.8-flash / gemini-2.0-flash).
+   * 2. On HTTP 503 / 5xx transient: retry up to maxRetries with backoff + jitter on same model.
+   * 3. On HTTP 429 (quota exhausted): immediately cascade to next fallback model without burning useless retries.
+   * 4. If all models exhausted: return honest SYNTHESIS_UNAVAILABLE_SENTINEL.
    */
   public async generateGroundedResponse(
     systemInstruction: string,
@@ -68,17 +100,81 @@ export class GeminiGenerationService {
         : this.defaultTemperature;
 
     const endTimer = ragSynthesisDurationSeconds.startTimer({ status: 'success' });
-    let attempt = 0;
 
+    // 1. Try primary configured model
+    const primaryResult = await this.executeGenerateWithModel(
+      this.generationModel,
+      systemInstruction,
+      userPrompt,
+      resolvedTemperature
+    );
+
+    if (primaryResult !== null) {
+      endTimer({ status: 'success' });
+      return primaryResult;
+    }
+
+    // 2. Cascade through fallback models on quota exhaustion (429) or primary failure
+    for (const fallbackModel of this.fallbackModels) {
+      if (fallbackModel.toLowerCase() === this.generationModel.toLowerCase()) {
+        continue;
+      }
+      logger.warn(
+        { primaryModel: this.generationModel, fallbackModel },
+        'Primary model unavailable or quota exhausted. Cascading to fallback model.'
+      );
+      ragGenerationCallsTotal.inc({ status: `cascade_${fallbackModel}` });
+
+      const cascadeResult = await this.executeGenerateWithModel(
+        fallbackModel,
+        systemInstruction,
+        userPrompt,
+        resolvedTemperature
+      );
+
+      if (cascadeResult !== null) {
+        endTimer({ status: 'success' });
+        return cascadeResult;
+      }
+    }
+
+    // 3. All models exhausted: Return honest capacity sentinel instead of fake offline text
+    logger.error(
+      { primaryModel: this.generationModel, fallbackCount: this.fallbackModels.length },
+      'All generation models in cascade exhausted. Returning unavailable sentinel.'
+    );
+    endTimer({ status: 'all_quota_exhausted' });
+    ragGenerationCallsTotal.inc({ status: 'all_quota_exhausted' });
+    return GeminiGenerationService.SYNTHESIS_UNAVAILABLE_SENTINEL;
+  }
+
+  private async executeGenerateWithModel(
+    modelName: string,
+    systemInstruction: string,
+    userPrompt: string,
+    resolvedTemperature: number
+  ): Promise<string | null> {
     const retryPolicy = {
       ...resilienceConfig.ai,
       maxRetries: this.maxRetries,
       baseDelayMs: this.baseDelayMs,
     };
 
+    let attempt = 0;
+
     while (true) {
       try {
-        const endpoint = `${this.apiBaseUrl}/${this.generationModel}:generateContent?key=${this.apiKey}`;
+        const endpoint = `${this.apiBaseUrl}/${modelName}:generateContent?key=${this.apiKey}`;
+
+        const generationConfig: Record<string, unknown> = {
+          temperature: resolvedTemperature,
+          maxOutputTokens: 2048,
+        };
+
+        if (modelName.includes('3.') || modelName.includes('2.5')) {
+          generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
         const payload = {
           systemInstruction: {
             parts: [{ text: systemInstruction }],
@@ -89,10 +185,7 @@ export class GeminiGenerationService {
               parts: [{ text: userPrompt }],
             },
           ],
-          generationConfig: {
-            temperature: resolvedTemperature,
-            maxOutputTokens: 2048,
-          },
+          generationConfig,
         };
 
         const controller = new AbortController();
@@ -118,20 +211,30 @@ export class GeminiGenerationService {
 
           const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) {
-            endTimer({ status: 'success' });
             ragGenerationCallsTotal.inc({ status: 'success' });
             return text.trim();
           }
         }
 
         const statusCode = response.status;
-        const isRetryable = statusCode === 429 || statusCode >= 500;
 
-        if (isRetryable && attempt < this.maxRetries) {
+        // HTTP 429: Quota exhausted. Retrying the same model is blocked. Return null immediately to trigger cascade.
+        if (statusCode === 429) {
+          logger.warn(
+            { model: modelName, statusCode },
+            'Gemini model quota exhausted (HTTP 429). Triggering immediate model cascade.'
+          );
+          ragGenerationCallsTotal.inc({ status: 'quota_exhausted' });
+          return null;
+        }
+
+        // HTTP 503 or transient 5xx: Server load spike. Retry with backoff on the SAME model.
+        const isTransient = statusCode >= 500;
+        if (isTransient && attempt < this.maxRetries) {
           const delayMs = calculateBackoffWithJitter(attempt, retryPolicy);
           logger.warn(
-            { statusCode, attempt: attempt + 1, maxRetries: this.maxRetries, delayMs },
-            'Gemini generateContent returned transient error. Scheduling retry with backoff.'
+            { model: modelName, statusCode, attempt: attempt + 1, maxRetries: this.maxRetries, delayMs },
+            'Gemini generateContent returned transient error. Scheduling retry with backoff on same model.'
           );
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           attempt++;
@@ -140,16 +243,16 @@ export class GeminiGenerationService {
 
         const errorBody = await response.text();
         logger.warn(
-          { statusCode, errorBody },
-          'Gemini generateContent failed. Falling back to deterministic synthesis.'
+          { model: modelName, statusCode, errorBody },
+          'Gemini generateContent failed for model.'
         );
-        break;
+        return null;
       } catch (error: unknown) {
         if (attempt < this.maxRetries) {
           const delayMs = calculateBackoffWithJitter(attempt, retryPolicy);
           logger.warn(
-            { err: error, attempt: attempt + 1, delayMs },
-            'Network failure during Gemini generateContent. Retrying with backoff.'
+            { model: modelName, err: error, attempt: attempt + 1, maxRetries: this.maxRetries, delayMs },
+            'Network failure during Gemini generateContent. Retrying with backoff on same model.'
           );
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           attempt++;
@@ -157,16 +260,12 @@ export class GeminiGenerationService {
         }
 
         logger.warn(
-          { err: error },
-          'Gemini generateContent retries exhausted. Falling back to deterministic synthesis.'
+          { model: modelName, err: error },
+          'Gemini generateContent retries exhausted for model.'
         );
-        break;
+        return null;
       }
     }
-
-    endTimer({ status: 'fallback_error' });
-    ragGenerationCallsTotal.inc({ status: 'fallback_error' });
-    return this.generateLocalFallback(userPrompt);
   }
 
   /**

@@ -1838,8 +1838,8 @@ flowchart TD
     AssembleContext --> GeminiGen["9. Gemini 2.0 Flash Grounded Synthesis<br/>(Strict System Guardrails + Inline Citations)"]
 ```
 
-#### 5.3 Sequence Diagram: End-to-End PII-Protected Grounded Synthesis & Rehydration Flow
-Illustrates the full end-to-end request lifecycle: client PII tokenization (forward pass), candidate-constrained hybrid retrieval with automated refinement, grounded synthesis with Gemini 2.0 Flash, de-tokenization/rehydration (backward pass), and unified Prometheus/Loki telemetry recording.
+#### 5.3 Sequence Diagram: End-to-End PII-Protected Grounded Synthesis, Dialogue Memory & Model Cascading Flow
+Illustrates the full end-to-end request lifecycle: conversation history retrieval, client PII tokenization (forward pass), candidate-constrained hybrid retrieval with automated refinement, sliding-window dialogue prompt assembly, multi-model cascading with exponential backoff on Google Gemini API, de-tokenization/rehydration (backward pass), conversation turn persistence, and unified Prometheus/Loki telemetry recording.
 
 ```mermaid
 sequenceDiagram
@@ -1847,15 +1847,16 @@ sequenceDiagram
     actor Advisor as Relationship Manager / Advisor (UI)
     participant Ctrl as ragController
     participant SynthSvc as ragSynthesisService
+    participant TurnDB as RagConversationTurn (MongoDB)
     participant ClientDB as Client & ClientProfile (MongoDB)
     participant PIIGateway as piiProtectionGateway
     participant RetrSvc as ragRetrievalService
     participant Refiner as ragQueryRefinerService
     participant GenSvc as geminiGenerationService
-    participant GeminiAPI as Google Gemini API (gemini-2.0-flash)
+    participant GeminiAPI as Google Gemini API (Model Cascade)
     participant Metrics as Metrics & ragEvaluationTelemetryService
 
-    Advisor->>Ctrl: POST /nodejs-wtc-api/v1/portfolio-reviews/rag/query
+    Advisor->>Ctrl: POST /nodejs-wtc-api/v1/portfolio-reviews/rag/query (query, conversationId?, clientId?)
     activate Ctrl
     Ctrl->>SynthSvc: queryAndSynthesize(RagQueryRequestDto)
     activate SynthSvc
@@ -1863,6 +1864,13 @@ sequenceDiagram
     opt Client ID Provided
         SynthSvc->>ClientDB: findById(clientId) & findOne({ client: id })
         ClientDB-->>SynthSvc: ClientIdentityContext (firstName, PAN, phone, email)
+    end
+
+    opt Conversation ID Provided (Dialogue Memory - Approach A)
+        SynthSvc->>TurnDB: find({ conversationId }).sort({ turnIndex: -1 }).limit(3)
+        activate TurnDB
+        TurnDB-->>SynthSvc: priorTurns (Last 3 turns in chronological order)
+        deactivate TurnDB
     end
 
     Note over SynthSvc,PIIGateway: Forward Pass: Redact Client PII before LLM Egress
@@ -1896,28 +1904,56 @@ sequenceDiagram
         SynthSvc->>Metrics: ragSynthesisTotal.inc({ grounded: 'false' })
         SynthSvc-->>Ctrl: RagQueryResponseDto (isGrounded: false, defensiveAnswer)
     else Evidence Meets Quality Gate (Score >= 0.70)
-        Note over SynthSvc: Assemble Grounded Prompt with System Guardrails & [Source N] Tags
+        Note over SynthSvc: Assemble Prompt: Guardrails + Prior Turns History + Authentic [Source N] Chunks
         SynthSvc->>GenSvc: generateGroundedResponse(systemInstruction, groundedPrompt, temp=0.2)
         activate GenSvc
-        GenSvc->>GeminiAPI: POST /models/gemini-2.0-flash:generateContent
-        activate GeminiAPI
-        GeminiAPI-->>GenSvc: HTTP 200 OK (Synthesized Text with Source Tags & {{TOKENS}})
-        deactivate GeminiAPI
-        GenSvc-->>SynthSvc: synthesizedRawAnswer
-        deactivate GenSvc
 
-        Note over SynthSvc,PIIGateway: Backward Pass: Rehydrate Surrogate Tokens
-        SynthSvc->>PIIGateway: rehydrate(synthesizedRawAnswer, tokenVault)
-        activate PIIGateway
-        PIIGateway-->>SynthSvc: rehydratedAnswer (Authentic Client Attributes Restored)
-        deactivate PIIGateway
+        alt Primary Model Invocation (gemini-3.8-flash)
+            GenSvc->>GeminiAPI: POST /models/gemini-3.8-flash:generateContent
+            activate GeminiAPI
+            alt HTTP 200 OK
+                GeminiAPI-->>GenSvc: Synthesized text with [Source N] tags & {{TOKENS}}
+            else HTTP 429 Quota Exceeded (Immediate Cascade)
+                Note over GenSvc: Block retry on same model; immediately cascade to Secondary
+                GenSvc->>GeminiAPI: POST /models/gemini-3.5-flash:generateContent
+                alt HTTP 200 OK
+                    GeminiAPI-->>GenSvc: Synthesized text
+                else HTTP 429 / 5xx Persists
+                    GenSvc->>GeminiAPI: POST /models/gemini-flash-latest:generateContent
+                    GeminiAPI-->>GenSvc: Synthesized text or Quota Exhausted
+                end
+            else HTTP 503 Transient Spike
+                Note over GenSvc: Exponential backoff + randomized jitter on same model (up to 4 retries)
+                GenSvc->>GeminiAPI: Retry attempt on gemini-3.8-flash
+                GeminiAPI-->>GenSvc: HTTP 200 OK
+            end
+            deactivate GeminiAPI
+        end
+
+        alt All Cascade Models Exhausted (Honest Degradation Sentinel)
+            GenSvc-->>SynthSvc: [SYNTHESIS_UNAVAILABLE: ...]
+            Note over SynthSvc: Sentinel Detected: set isGrounded = false, return authentic evidence
+        else Synthesis Successful
+            GenSvc-->>SynthSvc: synthesizedRawAnswer
+            deactivate GenSvc
+
+            Note over SynthSvc,PIIGateway: Backward Pass: Rehydrate Surrogate Tokens
+            SynthSvc->>PIIGateway: rehydrate(synthesizedRawAnswer, tokenVault)
+            activate PIIGateway
+            PIIGateway-->>SynthSvc: rehydratedAnswer (Authentic Client Attributes Restored)
+            deactivate PIIGateway
+        end
+
+        opt Persist Turn to Dialogue Memory
+            SynthSvc->>TurnDB: create({ conversationId, turnIndex, userQuery, synthesizedAnswer, isGrounded })
+        end
 
         SynthSvc->>Metrics: Record Latency & Observability Metrics
         activate Metrics
         Note over Metrics: rag_synthesis_duration_seconds.observe(...)<br/>rag_synthesis_total.inc({ grounded: 'true' })
         deactivate Metrics
 
-        SynthSvc-->>Ctrl: RagQueryResponseDto (answer, citations, evidenceChunks, latencies)
+        SynthSvc-->>Ctrl: RagQueryResponseDto (answer, citations, evidenceChunks, conversationId, turnIndex)
     end
     deactivate SynthSvc
 
