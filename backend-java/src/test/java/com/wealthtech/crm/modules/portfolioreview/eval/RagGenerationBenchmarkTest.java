@@ -57,11 +57,20 @@ class RagGenerationBenchmarkTest {
         envApiKey = System.getenv("GEMINI_API_KEY");
         hasLiveKey = envApiKey != null && !envApiKey.isBlank() && !envApiKey.startsWith("your_");
 
+        String apiBaseUrl = System.getenv("GEMINI_API_BASE_URL");
+        if (apiBaseUrl == null || apiBaseUrl.isBlank()) {
+            apiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
+        }
+        String embeddingModel = System.getenv("GEMINI_EMBEDDING_MODEL");
+        if (embeddingModel == null || embeddingModel.isBlank()) {
+            embeddingModel = "text-embedding-004";
+        }
+
         ResilienceProperties properties = new ResilienceProperties();
         embeddingService = new GeminiEmbeddingService(
                 hasLiveKey ? envApiKey : "",
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                "text-embedding-004",
+                apiBaseUrl,
+                embeddingModel,
                 properties,
                 meterRegistry
         );
@@ -164,10 +173,19 @@ class RagGenerationBenchmarkTest {
     void testLiveGeminiGenerationAndJudgeEvaluation() {
         Assumptions.assumeTrue(hasLiveKey, "Skipping live LLM test: GEMINI_API_KEY is not configured in container/environment");
 
+        String apiBaseUrl = System.getenv("GEMINI_API_BASE_URL");
+        if (apiBaseUrl == null || apiBaseUrl.isBlank()) {
+            apiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
+        }
+        String generationModel = System.getenv("GEMINI_GENERATION_MODEL");
+        if (generationModel == null || generationModel.isBlank()) {
+            generationModel = "gemini-2.0-flash";
+        }
+
         GeminiGenerationService liveGenerationService = new GeminiGenerationService(
                 envApiKey,
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                "gemini-2.0-flash",
+                apiBaseUrl,
+                generationModel,
                 0.1,
                 new ResilienceProperties(),
                 meterRegistry
