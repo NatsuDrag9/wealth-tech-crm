@@ -213,6 +213,20 @@ flowchart TD
    - **Cosine Similarity**:
      $$\text{CosineSimilarity}(\vec{u}, \vec{v}) = \frac{\sum_{i=1}^{768} u_i \cdot v_i}{\sqrt{\sum_{i=1}^{768} u_i^2} \cdot \sqrt{\sum_{i=1}^{768} v_i^2}}$$
    - **Lexical Score**: Normalized query token overlap against chunk text and fund name, ensuring high-priority financial acronyms (e.g., `TER`, `ISIN`, `Exit Load`, `NAV`, `Benchmark`) are not drowned out by soft semantic matches.
+   - **Why In-Memory Ranking Instead of MongoDB Atlas Vector Search?**
+     MongoDB does offer **first-class native vector search** via `$vectorSearch` (Atlas 6.0+, GA 2023) — an HNSW index queried inside the aggregation pipeline that also supports payload pre-filtering. However, this is a **cloud-only Atlas feature** and is unavailable on the self-hosted `mongo:7` image used in our Docker Compose stack. Our SEBI candidate pre-filter (`isin: { $in: candidateIsins }`) reduces the working set to 20–100 chunks, making V8 in-memory cosine math sufficient at **<2ms**. If deployed to MongoDB Atlas, the entire scoring loop in `ragRetrievalService.ts` would be replaceable with:
+     ```js
+     db.fund_document_embeddings.aggregate([{
+       $vectorSearch: {
+         index: "embedding_index",
+         path: "embedding",
+         queryVector: queryVector,       // number[768]
+         numCandidates: 100,
+         limit: 5,
+         filter: { isin: { $in: candidateIsins } }  // pre-filter still respected
+       }
+     }])
+     ```
 
 6. **Evidence Quality Gate**:
    - Enforces a minimum cosine similarity threshold ($\text{threshold} = 0.70$) on the top-ranked chunk.
@@ -255,7 +269,7 @@ flowchart TD
       - `rag_synthesis_duration_seconds` (Histogram: end-to-end synthesis latency)
       - `rag_synthesis_total{grounded="true|false"}` (Counter: grounded vs defensively degraded queries)
       - `pii_tokenization_duration_seconds` & `pii_redacted_tokens_total` (Histogram/Counter: PII masking throughput)
-      - `rag_eval_faithfulness_score`, `rag_eval_relevancy_score`, `rag_eval_ir_recall`, `rag_eval_ir_ndcg`, `rag_eval_ir_mrr` (Gauges published via `ragEvaluationTelemetryService.ts`, matching the dual-backend schema).
+      - `rag_eval_faithfulness_score`, `rag_eval_relevancy_score`, `rag_eval_ir_recall`, `rag_eval_ir_ndcg`, `rag_eval_ir_mrr` (Gauges published via `ragEvaluationTelemetryService.ts`).
 
 ---
 
@@ -268,7 +282,7 @@ flowchart TD
 
 ### Slim vs. Fat JWT (Stateful DB Verification vs. Stateless Claims)
 
-1. We use a **Slim JWT** containing only the user's `email` as the subject, keeping tokens minimal and matching the Spring Boot backend (`JwtTokenProvider.java`).
+1. We use a **Slim JWT** containing only the user's `email` as the subject, keeping tokens minimal, fast to sign, and secure.
 2. We rejected a **Fat JWT** (embedding permissions) because if an admin revokes access, a fat JWT still allows the user to access the application with old permissions for 15 minutes until the token expires.
 
 ### Controller vs. Service Layer Separation
@@ -327,14 +341,27 @@ flowchart TD
    - *Defensive Degradation (Our Architecture)*: If retrieved evidence fails the $0.70$ quality threshold even after query refinement, the pipeline **bypasses LLM generation entirely**. It outputs a clear, structured disclaimer explaining that no official disclosures satisfied the quality threshold and cites the highest similarity score achieved.
 3. **Interview Justification**: "In fintech and wealth management, a truthful rejection is infinitely more valuable and compliant than an articulate hallucination."
 
-### In-Memory Hybrid Ranking (Node.js + MongoDB) vs. Dedicated pgvector (Java + PostgreSQL)
+### In-Memory Hybrid Vector Retrieval & NoSQL Vector DB Landscape
 
-1. **Context**: This platform features a dual-backend architecture: Java Spring Boot uses PostgreSQL with the `pgvector` extension (HNSW index), while Node.js Express uses MongoDB Atlas with document-native vector storage and in-memory ranking.
-2. **System Design Comparison**:
-   - **Java / pgvector Approach**: Ideal for unbounded global vector lookups across millions of embeddings. The database offloads vector math using SIMD CPU instructions and HNSW graphs. However, it requires vector-specific database extensions, specialized index tuning (m, ef_construction), and complex SQL functions to combine lexical with semantic scores.
-   - **Node.js / MongoDB + In-Memory Ranking Approach**: Because our architecture enforces **Candidate Pre-Filtering** by client risk category/ISIN, the database query `find({ isin: { $in: candidateIsins } })` returns a targeted subset of chunks (typically 20–100 chunks).
-   - Modern V8 JavaScript computes cosine similarity for 100 768-dimensional vectors in ~1.5ms using typed arrays.
-   - This in-memory execution allows effortless hybrid scoring ($0.70 \times \text{semantic} + 0.30 \times \text{lexical}$) with zero database locks, zero reliance on proprietary DB plugins, and full portability across any standard MongoDB cluster (including local dev and serverless Atlas).
+1. **Context & Storage Architecture**: In `backend-nodejs`, regulatory mutual fund document chunks and their 768-dimensional normalized dense vectors (`text-embedding-004`) are persisted in MongoDB collection `fund_document_embeddings` via Mongoose (`FundDocumentEmbedding.ts`).
+2. **Does MongoDB support native vector search?**
+   Yes — **MongoDB Atlas Vector Search** (`$vectorSearch`, GA since Atlas 6.0, 2023) provides a native HNSW vector index queried directly inside the aggregation pipeline with payload pre-filter support.
+   However, `$vectorSearch` is a **cloud-only feature** (MongoDB Atlas managed service). The self-hosted community edition (`mongo:7` running in our Docker environment) does not include `$vectorSearch`.
+3. **NoSQL & Vector DB Landscape (Interview Reference)**:
+
+   | Database | Vector Search Capability | Key Architectural Trade-Offs |
+   |---|---|---|
+   | **MongoDB Atlas** | ✅ `$vectorSearch` (HNSW) | Managed cloud-only; supports hybrid search with `$search` (Lucene) |
+   | **Redis Stack** | ✅ `FT.SEARCH` + `VECTOR` | In-memory RAM storage; requires `redis/redis-stack` image |
+   | **Elasticsearch / OpenSearch** | ✅ `knn` query with HNSW | Enterprise full-text + vector hybrid; heavy RAM footprint |
+   | **Qdrant / Weaviate / Chroma** | ✅ Purpose-built Vector DBs | Specialized ANN search & payload filtering; adds dedicated sidecar infrastructure |
+
+4. **Why Candidate Pre-Filtering + In-Memory Ranking is Optimal for Node.js**:
+   - Because our architecture enforces **SEBI Candidate Pre-Filtering** by client risk assessment (`RiskAssessment` $\rightarrow$ `EligibleFund`), MongoDB's `find({ isin: { $in: candidateIsins } })` narrows the working set down to a targeted 20–100 chunks.
+   - Modern V8 JavaScript computes cosine similarity across 100 768-dimensional vectors in **~1.5ms** using typed arrays.
+   - This in-memory execution allows effortless hybrid scoring ($0.70 \times \text{semantic} + 0.30 \times \text{lexical}$) with zero database locks, zero reliance on external vector extensions, and full portability across any standard MongoDB deployment (local Docker, self-hosted, or Atlas).
+5. **Atlas Upgrade Path**: If migrated to MongoDB Atlas in production, the retrieval loop in `ragRetrievalService.ts` can seamlessly adopt `$vectorSearch` via aggregation pipelines without altering any upstream controllers, PII gateways, or synthesis services.
+
 
 ### RAG Evaluation Benchmark (Native Test Suite)
 We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGenerationService` (Gemini 2.0 Flash) directly inside Vitest over external frameworks (Ragas / Promptfoo / Autoevals). This eliminates external framework dependencies and native C++ build overhead while enabling seamless CI/CD test execution with offline fallback support.
