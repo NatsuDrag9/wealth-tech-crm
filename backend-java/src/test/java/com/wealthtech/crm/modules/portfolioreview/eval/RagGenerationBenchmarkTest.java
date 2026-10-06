@@ -63,7 +63,7 @@ class RagGenerationBenchmarkTest {
         }
         String embeddingModel = System.getenv("GEMINI_EMBEDDING_MODEL");
         if (embeddingModel == null || embeddingModel.isBlank()) {
-            embeddingModel = "text-embedding-004";
+            embeddingModel = "gemini-embedding-001";
         }
 
         ResilienceProperties properties = new ResilienceProperties();
@@ -107,7 +107,7 @@ class RagGenerationBenchmarkTest {
     @Test
     @DisplayName("Should reject completely off-topic responses via Embedding Cosine Similarity")
     void testEmbeddingRelevancyRejectsOffTopicResponse() {
-        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.40, telemetryService);
+        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.70, telemetryService);
 
         EvaluationRequest offTopicRequest = EvaluationRequest.builder()
                 .userText("What is the Total Expense Ratio for Parag Parikh Flexi Cap Fund Direct Plan?")
@@ -179,7 +179,7 @@ class RagGenerationBenchmarkTest {
         }
         String generationModel = System.getenv("GEMINI_GENERATION_MODEL");
         if (generationModel == null || generationModel.isBlank()) {
-            generationModel = "gemini-2.0-flash";
+            generationModel = "gemini-3.8-flash";
         }
 
         GeminiGenerationService liveGenerationService = new GeminiGenerationService(

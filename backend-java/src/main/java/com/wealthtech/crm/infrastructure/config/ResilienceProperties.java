@@ -27,11 +27,11 @@ public class ResilienceProperties {
     @Setter
     public static class RetryPolicy {
         private int maxRetries = 3;
-        private long baseDelayMs = 500;
-        private long maxDelayMs = 5000;
+        private long baseDelayMs = 1000;
+        private long maxDelayMs = 10000;
         private int jitterPercent = 20;
         private long connectTimeoutMs = 15000;
-        private long requestTimeoutMs = 30000;
+        private long requestTimeoutMs = 60000;
     }
 
     /**

@@ -6,6 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -115,10 +116,12 @@ public class GeminiGenerationService {
                 Map<String, Object> systemPart = Map.of("text", systemInstruction);
                 Map<String, Object> systemInstructionNode = Map.of("parts", List.of(systemPart));
 
-                Map<String, Object> generationConfig = Map.of(
-                        "temperature", resolvedTemperature,
-                        "maxOutputTokens", 2048
-                );
+                Map<String, Object> generationConfig = new HashMap<>();
+                generationConfig.put("temperature", resolvedTemperature);
+                generationConfig.put("maxOutputTokens", 2048);
+                if (generationModel != null && (generationModel.contains("3.") || generationModel.contains("2.5"))) {
+                    generationConfig.put("thinkingConfig", Map.of("thinkingBudget", 0));
+                }
 
                 Map<String, Object> requestBody = Map.of(
                         "systemInstruction", systemInstructionNode,

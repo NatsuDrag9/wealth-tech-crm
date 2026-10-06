@@ -76,8 +76,8 @@ management:
 gemini:
   api-key: ${GEMINI_API_KEY:}
   api-base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta/models}
-  embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
-  generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.0-flash}
+  embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
+  generation-model: ${GEMINI_GENERATION_MODEL:gemini-3.8-flash}
   generation-temperature: ${GEMINI_GENERATION_TEMPERATURE:0.1}
 
 # RAG Knowledge & Grounded Synthesis Configuration
@@ -88,11 +88,11 @@ rag:
 resilience:
   defaults:
     max-retries: 3
-    base-delay-ms: 500
-    max-delay-ms: 5000
+    base-delay-ms: 1000
+    max-delay-ms: 10000
     jitter-percent: 20
     connect-timeout-ms: 15000
-    request-timeout-ms: 30000
+    request-timeout-ms: 60000
   gemini:
     max-retries: ${GEMINI_MAX_RETRIES:${resilience.defaults.max-retries}}
     base-delay-ms: ${GEMINI_BASE_DELAY_MS:${resilience.defaults.base-delay-ms}}
