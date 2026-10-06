@@ -22,4 +22,20 @@ export const config = {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test',
     forcePathStyle: process.env.AWS_FORCE_PATH_STYLE !== 'false',
   },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY || '',
+    apiBaseUrl: process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models',
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
+    generationModel: process.env.GEMINI_GENERATION_MODEL || 'gemini-2.0-flash',
+    generationTemperature: parseFloat(process.env.GEMINI_GENERATION_TEMPERATURE || '0.1'),
+    connectTimeoutMs: parseInt(process.env.GEMINI_CONNECT_TIMEOUT_MS || '15000', 10),
+    requestTimeoutMs: parseInt(process.env.GEMINI_REQUEST_TIMEOUT_MS || '30000', 10),
+    maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES || '3', 10),
+    baseDelayMs: parseInt(process.env.GEMINI_BASE_DELAY_MS || '500', 10),
+  },
+  rag: {
+    topK: parseInt(process.env.RAG_TOP_K || '5', 10),
+    similarityThreshold: parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.65'),
+    sourcesPath: process.env.RAG_SOURCES_PATH || '../assets/rag-sources',
+  },
 };

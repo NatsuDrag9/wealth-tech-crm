@@ -83,4 +83,42 @@ export const piiTokenizationDurationSeconds = new client.Histogram({
   registers: [register],
 });
 
+export const ragEmbeddingDurationSeconds = new client.Histogram({
+  name: 'rag_embedding_latency_seconds',
+  help: 'Latency of Gemini embedding API calls in seconds',
+  labelNames: ['status'] as const,
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+  registers: [register],
+});
+
+export const ragEmbeddingCallsTotal = new client.Counter({
+  name: 'rag_embedding_calls_total',
+  help: 'Total Gemini embedding API calls',
+  labelNames: ['status'] as const,
+  registers: [register],
+});
+
+export const ragSynthesisDurationSeconds = new client.Histogram({
+  name: 'rag_synthesis_duration_seconds',
+  help: 'Latency of RAG grounded synthesis in seconds',
+  labelNames: ['status'] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30],
+  registers: [register],
+});
+
+export const ragSynthesisTotal = new client.Counter({
+  name: 'rag_synthesis_total',
+  help: 'Total grounded RAG query syntheses',
+  labelNames: ['grounded'] as const,
+  registers: [register],
+});
+
+export const ragGenerationCallsTotal = new client.Counter({
+  name: 'rag_generation_calls_total',
+  help: 'Total Gemini generation API calls',
+  labelNames: ['status'] as const,
+  registers: [register],
+});
+
+
 
