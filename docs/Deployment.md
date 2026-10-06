@@ -218,9 +218,16 @@ The following observability servers are configured and runnable via Docker Compo
 
 ### Custom RAG & Agentic Telemetry Metrics
 
-In addition to default OS and HTTP request duration histograms (`http_request_duration_seconds`), `backend-nodejs/src/common/metrics/metrics.ts` exposes custom AI-native metrics:
+In addition to default OS and HTTP request duration histograms (`http_request_duration_seconds`), `backend-nodejs/src/common/metrics/metrics.ts` exposes custom AI-native metrics matching the unified schema across both Java and Node.js backends:
 - `rag_retrieval_duration_seconds`: Histogram tracking hybrid search latency across vector and keyword indexes.
 - `rag_similarity_score`: Histogram capturing cosine similarity distribution of retrieved document chunks.
+- `rag_eval_faithfulness_score`: Gauge (0.0 - 1.0) assessing factual grounding against retrieved document context (zero hallucination).
+- `rag_eval_relevancy_score`: Gauge (0.0 - 1.0) assessing semantic alignment to user queries.
+- `rag_eval_ir_recall`: Gauge tracking Candidate-Grounded Recall@K metric across benchmark evaluation.
+- `rag_eval_ir_ndcg`: Gauge tracking Normalized Discounted Cumulative Gain (NDCG@K).
+- `rag_eval_ir_mrr`: Gauge tracking Mean Reciprocal Rank (MRR).
+- `rag_eval_runs_total`: Counter recording evaluation runs tagged by evaluator, judge type, and verdict (`pass`/`fail`).
+- `rag_eval_duration_seconds`: Histogram measuring evaluation execution latency.
 - `llm_tokens_total`: Counter tracking prompt and completion tokens per model and agent.
 - `agent_tool_calls_total`: Counter recording tool invocations by agent, tool name, and success/error status.
 - `agent_execution_iterations`: Histogram measuring reasoning-action loop iterations per agent goal.
