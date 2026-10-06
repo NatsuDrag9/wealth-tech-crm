@@ -7,6 +7,7 @@ import com.wealthtech.crm.infrastructure.ai.GeminiEmbeddingService;
 import com.wealthtech.crm.infrastructure.ai.GeminiGenerationService;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationRequest;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationResponse;
+import com.wealthtech.crm.modules.portfolioreview.service.RagEvaluationTelemetryService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,46 +22,66 @@ public class RelevancyEvaluator implements Evaluator {
     private final GeminiEmbeddingService embeddingService;
     private final GeminiGenerationService generationService;
     private final double passThreshold;
+    private final RagEvaluationTelemetryService telemetryService;
 
     public RelevancyEvaluator(GeminiEmbeddingService embeddingService) {
-        this(embeddingService, null, 0.70);
+        this(embeddingService, null, 0.70, null);
     }
 
     public RelevancyEvaluator(GeminiGenerationService generationService) {
-        this(null, generationService, 0.85);
+        this(null, generationService, 0.85, null);
     }
 
     public RelevancyEvaluator(GeminiEmbeddingService embeddingService, GeminiGenerationService generationService, double passThreshold) {
+        this(embeddingService, generationService, passThreshold, null);
+    }
+
+    public RelevancyEvaluator(GeminiEmbeddingService embeddingService, GeminiGenerationService generationService, double passThreshold, RagEvaluationTelemetryService telemetryService) {
         this.embeddingService = embeddingService;
         this.generationService = generationService;
         this.passThreshold = passThreshold;
+        this.telemetryService = telemetryService;
     }
 
     @Override
     public EvaluationResponse evaluate(EvaluationRequest request) {
+        long startTime = System.currentTimeMillis();
+        EvaluationResponse response;
+
         if (request == null || request.getResponseContent() == null || request.getResponseContent().isBlank()) {
-            return EvaluationResponse.builder()
+            response = EvaluationResponse.builder()
                     .pass(false)
                     .score(0.0f)
                     .feedback("Response content is blank")
                     .metadata(Map.of("error", "BLANK_RESPONSE"))
                     .build();
-        }
-
-        // 1. If Gemini generation judge is available and configured
-        if (generationService != null && generationService.isLiveKeyConfigured()) {
+        } else if (generationService != null && generationService.isLiveKeyConfigured()) {
             try {
-                return evaluateWithLlmJudge(request.getUserText(), request.getResponseContent());
+                response = evaluateWithLlmJudge(request.getUserText(), request.getResponseContent());
             } catch (Exception e) {
-                log.warn("LLM Judge relevancy evaluation failed: {}", e.getMessage());
+                log.warn("LLM Judge relevancy evaluation failed: {}. Falling back to embeddings.", e.getMessage());
+                response = (embeddingService != null)
+                        ? evaluateWithEmbeddings(request.getUserText(), request.getResponseContent())
+                        : fallbackResponse();
             }
+        } else if (embeddingService != null) {
+            response = evaluateWithEmbeddings(request.getUserText(), request.getResponseContent());
+        } else {
+            response = fallbackResponse();
         }
 
-        // 2. Evaluate using semantic vector embedding cosine similarity
-        if (embeddingService != null) {
-            return evaluateWithEmbeddings(request.getUserText(), request.getResponseContent());
+        if (telemetryService != null) {
+            long duration = System.currentTimeMillis() - startTime;
+            String judgeType = response.getMetadata() != null
+                    ? String.valueOf(response.getMetadata().getOrDefault("judgeType", "UNKNOWN"))
+                    : "UNKNOWN";
+            telemetryService.recordRelevancy(response.getScore(), response.isPass(), judgeType, duration);
         }
 
+        return response;
+    }
+
+    private EvaluationResponse fallbackResponse() {
         return EvaluationResponse.builder()
                 .pass(true)
                 .score(1.0f)

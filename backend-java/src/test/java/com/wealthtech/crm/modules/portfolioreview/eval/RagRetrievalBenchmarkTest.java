@@ -32,6 +32,7 @@ import com.wealthtech.crm.modules.portfolioreview.eval.model.GoldenDatasetEntry;
 import com.wealthtech.crm.modules.portfolioreview.repository.EligibleFundRepository;
 import com.wealthtech.crm.modules.portfolioreview.repository.FundDocumentEmbeddingRepository;
 import com.wealthtech.crm.modules.portfolioreview.service.RagRetrievalService;
+import com.wealthtech.crm.modules.portfolioreview.service.RagEvaluationTelemetryService;
 import com.wealthtech.crm.modules.riskappetite.repository.RaRepository;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -52,6 +53,8 @@ class RagRetrievalBenchmarkTest {
     private GeminiEmbeddingService embeddingService;
 
     private RagRetrievalService retrievalService;
+    private RagEvaluationTelemetryService telemetryService;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -60,12 +63,15 @@ class RagRetrievalBenchmarkTest {
             goldenDataset = objectMapper.readValue(is, new TypeReference<List<GoldenDatasetEntry>>() {});
         }
 
+        meterRegistry = new SimpleMeterRegistry();
+        telemetryService = new RagEvaluationTelemetryService(meterRegistry);
+
         retrievalService = new RagRetrievalService(
                 embeddingRepository,
                 eligibleFundRepository,
                 raRepository,
                 embeddingService,
-                new SimpleMeterRegistry(),
+                meterRegistry,
                 0.65
         );
         lenient().when(embeddingService.getEmbedding(anyString())).thenReturn(new float[768]);
@@ -143,6 +149,16 @@ class RagRetrievalBenchmarkTest {
 
         System.out.println(scorecard.formatSummary());
 
+        // Record scorecard to telemetry service
+        telemetryService.recordIrBenchmark(
+                scorecard.getMeanRecallAtK(),
+                scorecard.getMeanNdcgAtK(),
+                scorecard.getMeanReciprocalRank(),
+                k,
+                scorecard.getMeanRecallAtK() >= 0.85,
+                150L
+        );
+
         // Assert regulatory thresholds:
         // Recall@5 >= 0.85
         assertThat(scorecard.getMeanRecallAtK()).isGreaterThanOrEqualTo(0.85);
@@ -152,6 +168,12 @@ class RagRetrievalBenchmarkTest {
         assertThat(scorecard.getMeanNdcgAtK()).isGreaterThanOrEqualTo(0.80);
         // MRR >= 0.90
         assertThat(scorecard.getMeanReciprocalRank()).isGreaterThanOrEqualTo(0.90);
+
+        // Assert that Micrometer telemetry gauges reflect the calculated scores
+        assertThat(telemetryService.getLatestIrRecallAtK()).isEqualTo(scorecard.getMeanRecallAtK());
+        assertThat(telemetryService.getLatestIrNdcgAtK()).isEqualTo(scorecard.getMeanNdcgAtK());
+        assertThat(telemetryService.getLatestIrMrr()).isEqualTo(scorecard.getMeanReciprocalRank());
+        assertThat(meterRegistry.get("rag.eval.runs.total").tag("evaluator", "ir_benchmark").counter().count()).isEqualTo(1.0);
     }
 
     @Test

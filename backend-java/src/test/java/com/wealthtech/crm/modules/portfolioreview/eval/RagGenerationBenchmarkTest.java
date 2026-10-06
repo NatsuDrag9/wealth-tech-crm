@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import com.wealthtech.crm.modules.portfolioreview.eval.evaluator.RelevancyEvalua
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationRequest;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationResponse;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.GoldenDatasetEntry;
+import com.wealthtech.crm.modules.portfolioreview.service.RagEvaluationTelemetryService;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
@@ -37,6 +39,10 @@ class RagGenerationBenchmarkTest {
     private GeminiGenerationService mockGenerationService;
 
     private GeminiEmbeddingService embeddingService;
+    private SimpleMeterRegistry meterRegistry;
+    private RagEvaluationTelemetryService telemetryService;
+    private String envApiKey;
+    private boolean hasLiveKey;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -45,20 +51,26 @@ class RagGenerationBenchmarkTest {
             goldenDataset = objectMapper.readValue(is, new TypeReference<List<GoldenDatasetEntry>>() {});
         }
 
+        meterRegistry = new SimpleMeterRegistry();
+        telemetryService = new RagEvaluationTelemetryService(meterRegistry);
+
+        envApiKey = System.getenv("GEMINI_API_KEY");
+        hasLiveKey = envApiKey != null && !envApiKey.isBlank() && !envApiKey.startsWith("your_");
+
         ResilienceProperties properties = new ResilienceProperties();
         embeddingService = new GeminiEmbeddingService(
-                "",
+                hasLiveKey ? envApiKey : "",
                 "https://generativelanguage.googleapis.com/v1beta/models",
                 "text-embedding-004",
                 properties,
-                new SimpleMeterRegistry()
+                meterRegistry
         );
     }
 
     @Test
     @DisplayName("Should evaluate Answer Relevance using Semantic Embedding Cosine Similarity across Golden Dataset")
     void testGoldenDatasetSemanticRelevancyWithEmbeddings() {
-        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.40);
+        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.40, telemetryService);
 
         for (GoldenDatasetEntry entry : goldenDataset) {
             EvaluationRequest request = EvaluationRequest.builder()
@@ -76,12 +88,17 @@ class RagGenerationBenchmarkTest {
                     .as("Cosine similarity for '%s' should be positive and relevant", entry.getId())
                     .isGreaterThan(0.40f);
         }
+
+        // Verify telemetry gauges were updated
+        assertThat(telemetryService.getLatestRelevancyScore()).isGreaterThan(0.40);
+        assertThat(meterRegistry.get("rag.eval.runs.total").tag("evaluator", "relevancy").counter().count())
+                .isEqualTo((double) goldenDataset.size());
     }
 
     @Test
     @DisplayName("Should reject completely off-topic responses via Embedding Cosine Similarity")
     void testEmbeddingRelevancyRejectsOffTopicResponse() {
-        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.40);
+        RelevancyEvaluator evaluator = new RelevancyEvaluator(embeddingService, null, 0.40, telemetryService);
 
         EvaluationRequest offTopicRequest = EvaluationRequest.builder()
                 .userText("What is the Total Expense Ratio for Parag Parikh Flexi Cap Fund Direct Plan?")
@@ -102,7 +119,7 @@ class RagGenerationBenchmarkTest {
         when(mockGenerationService.generateGroundedResponse(anyString(), anyString(), anyDouble()))
                 .thenReturn("VERDICT: PASS\nSCORE: 0.98\nREASONING: All facts directly supported by SID evidence.");
 
-        FactCheckingEvaluator evaluator = new FactCheckingEvaluator(mockGenerationService, 0.95);
+        FactCheckingEvaluator evaluator = new FactCheckingEvaluator(mockGenerationService, 0.95, telemetryService);
 
         EvaluationRequest request = EvaluationRequest.builder()
                 .userText("What is the exit load?")
@@ -115,6 +132,8 @@ class RagGenerationBenchmarkTest {
         assertThat(response.isPass()).isTrue();
         assertThat(response.getScore()).isEqualTo(0.98f);
         assertThat(response.getMetadata().get("judgeType")).isEqualTo("LLM_GEMINI");
+        assertThat(telemetryService.getLatestFaithfulnessScore()).isCloseTo(0.98, org.assertj.core.data.Offset.offset(0.001));
+        assertThat(meterRegistry.get("rag.eval.runs.total").tag("evaluator", "fact_checking").counter().count()).isEqualTo(1.0);
     }
 
     @Test
@@ -123,7 +142,7 @@ class RagGenerationBenchmarkTest {
         when(mockGenerationService.generateGroundedResponse(anyString(), anyString(), anyDouble()))
                 .thenReturn("VERDICT: FAIL\nSCORE: 0.15\nREASONING: Fabricated guaranteed return of 99.9% not found in context.");
 
-        FactCheckingEvaluator evaluator = new FactCheckingEvaluator(mockGenerationService, 0.95);
+        FactCheckingEvaluator evaluator = new FactCheckingEvaluator(mockGenerationService, 0.95, telemetryService);
 
         EvaluationRequest request = EvaluationRequest.builder()
                 .userText("What is the return?")
@@ -137,6 +156,60 @@ class RagGenerationBenchmarkTest {
                 .as("Hallucinated response must be flagged as failed")
                 .isFalse();
         assertThat(response.getScore()).isLessThan(0.95f);
+        assertThat(telemetryService.getLatestFaithfulnessScore()).isCloseTo(0.15, org.assertj.core.data.Offset.offset(0.001));
+    }
+
+    @Test
+    @DisplayName("Should execute live Gemini LLM Grounded Generation and LLM Judge Evaluation when GEMINI_API_KEY is present")
+    void testLiveGeminiGenerationAndJudgeEvaluation() {
+        Assumptions.assumeTrue(hasLiveKey, "Skipping live LLM test: GEMINI_API_KEY is not configured in container/environment");
+
+        GeminiGenerationService liveGenerationService = new GeminiGenerationService(
+                envApiKey,
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                "gemini-2.0-flash",
+                0.1,
+                new ResilienceProperties(),
+                meterRegistry
+        );
+
+        FactCheckingEvaluator liveFactChecker = new FactCheckingEvaluator(liveGenerationService, 0.85, telemetryService);
+        RelevancyEvaluator liveRelevancy = new RelevancyEvaluator(embeddingService, liveGenerationService, 0.70, telemetryService);
+
+        GoldenDatasetEntry entry = goldenDataset.get(0);
+        String systemInstruction = """
+            You are an expert SEBI-compliant Wealth Management Copilot for financial advisors.
+            Answer the user's investment query using EXCLUSIVELY the provided Grounded Evidence.
+            Every financial figure must have an inline citation. Never extrapolate statistics.
+            """;
+        String groundedPrompt = "EVIDENCE:\n" + String.join("\n", entry.getGroundTruthContextChunks()) +
+                "\n\nUSER QUESTION: " + entry.getQuestion();
+
+        String generatedAnswer = liveGenerationService.generateGroundedResponse(systemInstruction, groundedPrompt, 0.1);
+
+        assertThat(generatedAnswer).isNotBlank();
+        assertThat(generatedAnswer).doesNotContain("Offline Synthesis Mode");
+
+        EvaluationRequest evalRequest = EvaluationRequest.builder()
+                .userText(entry.getQuestion())
+                .contextList(entry.getGroundTruthContextChunks())
+                .responseContent(generatedAnswer)
+                .build();
+
+        // 1. Fact-checking / Faithfulness with real Gemini 2.0 Flash judge
+        EvaluationResponse factCheckResult = liveFactChecker.evaluate(evalRequest);
+        assertThat(factCheckResult.isPass()).as("Live LLM Judge must pass grounded response").isTrue();
+        assertThat(factCheckResult.getScore()).isGreaterThanOrEqualTo(0.85f);
+
+        // 2. Relevancy with real Gemini embeddings / judge
+        EvaluationResponse relevancyResult = liveRelevancy.evaluate(evalRequest);
+        assertThat(relevancyResult.isPass()).as("Live response must be semantically relevant to query").isTrue();
+        assertThat(relevancyResult.getScore()).isGreaterThanOrEqualTo(0.70f);
+
+        // 3. Verify telemetry meters were updated
+        assertThat(telemetryService.getLatestFaithfulnessScore()).isEqualTo((double) factCheckResult.getScore());
+        assertThat(telemetryService.getLatestRelevancyScore()).isEqualTo((double) relevancyResult.getScore());
+        assertThat(meterRegistry.get("rag.eval.runs.total").tag("judge_type", "llm_gemini").counter().count()).isGreaterThanOrEqualTo(1.0);
     }
 
     @Test

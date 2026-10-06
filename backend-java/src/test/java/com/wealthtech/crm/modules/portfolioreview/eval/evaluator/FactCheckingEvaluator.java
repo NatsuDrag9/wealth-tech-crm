@@ -7,6 +7,7 @@ import java.util.Map;
 import com.wealthtech.crm.infrastructure.ai.GeminiGenerationService;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationRequest;
 import com.wealthtech.crm.modules.portfolioreview.eval.model.EvaluationResponse;
+import com.wealthtech.crm.modules.portfolioreview.service.RagEvaluationTelemetryService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -20,45 +21,64 @@ public class FactCheckingEvaluator implements Evaluator {
 
     private final GeminiGenerationService generationService;
     private final double passThreshold;
+    private final RagEvaluationTelemetryService telemetryService;
 
     public FactCheckingEvaluator() {
-        this(null, 0.95);
+        this(null, 0.95, null);
     }
 
     public FactCheckingEvaluator(GeminiGenerationService generationService) {
-        this(generationService, 0.95);
+        this(generationService, 0.95, null);
     }
 
     public FactCheckingEvaluator(GeminiGenerationService generationService, double passThreshold) {
+        this(generationService, passThreshold, null);
+    }
+
+    public FactCheckingEvaluator(GeminiGenerationService generationService, double passThreshold, RagEvaluationTelemetryService telemetryService) {
         this.generationService = generationService;
         this.passThreshold = passThreshold;
+        this.telemetryService = telemetryService;
     }
 
     @Override
     public EvaluationResponse evaluate(EvaluationRequest request) {
+        long startTime = System.currentTimeMillis();
+        EvaluationResponse response;
+
         if (request == null || request.getResponseContent() == null || request.getResponseContent().isBlank()) {
-            return EvaluationResponse.builder()
+            response = EvaluationResponse.builder()
                     .pass(false)
                     .score(0.0f)
                     .feedback("Response content is empty")
                     .metadata(Map.of("error", "EMPTY_RESPONSE"))
                     .build();
+        } else {
+            List<String> contexts = request.getContextList() != null ? request.getContextList() : List.of();
+            String combinedContext = String.join("\n---\n", contexts);
+
+            if (generationService != null) {
+                response = evaluateWithLlmJudge(request.getUserText(), combinedContext, request.getResponseContent());
+            } else {
+                // Defensive baseline when no LLM service is configured
+                response = EvaluationResponse.builder()
+                        .pass(true)
+                        .score(1.0f)
+                        .feedback("Evaluator configured in passive baseline mode")
+                        .metadata(Map.of("judgeType", "PASSIVE_BASELINE"))
+                        .build();
+            }
         }
 
-        List<String> contexts = request.getContextList() != null ? request.getContextList() : List.of();
-        String combinedContext = String.join("\n---\n", contexts);
-
-        if (generationService != null) {
-            return evaluateWithLlmJudge(request.getUserText(), combinedContext, request.getResponseContent());
+        if (telemetryService != null) {
+            long duration = System.currentTimeMillis() - startTime;
+            String judgeType = response.getMetadata() != null
+                    ? String.valueOf(response.getMetadata().getOrDefault("judgeType", "UNKNOWN"))
+                    : "UNKNOWN";
+            telemetryService.recordFaithfulness(response.getScore(), response.isPass(), judgeType, duration);
         }
 
-        // Defensive baseline when no LLM service is configured
-        return EvaluationResponse.builder()
-                .pass(true)
-                .score(1.0f)
-                .feedback("Evaluator configured in passive baseline mode")
-                .metadata(Map.of("judgeType", "PASSIVE_BASELINE"))
-                .build();
+        return response;
     }
 
     private EvaluationResponse evaluateWithLlmJudge(String query, String context, String response) {
