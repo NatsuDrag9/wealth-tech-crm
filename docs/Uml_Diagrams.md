@@ -1733,37 +1733,37 @@ stateDiagram-v2
 
 ### 5. AI-Native RAG Ingestion & Hybrid Retrieval Architecture
 
-#### 5.1 Sequence Diagram: RAG Document Ingestion & Idempotent pgvector Storage
-Illustrates the end-to-end ingestion pipeline: parsing multi-document PDFs, semantic chunking, Gemini dense vector generation with retry/jitter, and transactional chunk replacement in PostgreSQL `pgvector`.
+#### 5.1 Sequence Diagram: RAG Document Ingestion & Idempotent MongoDB Vector Persistence
+Illustrates the end-to-end Node.js ingestion pipeline: parsing multi-document PDFs in-memory (`pdfDocumentParserService`), boundary-aware semantic chunking (`documentChunkingService`), Gemini dense vector generation with exponential backoff and randomized jitter (`geminiEmbeddingService`), and idempotent chunk persistence in MongoDB collection `fund_document_embeddings`.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Admin as System Administrator / CLI
-    participant Ctrl as RagIngestionController
-    participant IngestSvc as FundDocumentIngestionService
-    participant Parser as PdfDocumentParserService (PDFBox 3.x)
-    participant Chunker as DocumentChunkingService
-    participant EmbedSvc as GeminiEmbeddingService
+    participant Ctrl as ragController
+    participant IngestSvc as fundDocumentIngestionService
+    participant Parser as pdfDocumentParserService
+    participant Chunker as documentChunkingService
+    participant EmbedSvc as geminiEmbeddingService
     participant GeminiAPI as Google Gemini API (text-embedding-004)
-    participant Repo as FundDocumentEmbeddingRepository
-    participant PG as PostgreSQL (pgvector)
+    participant Mongo as MongoDB (FundDocumentEmbedding)
 
-    Admin->>Ctrl: POST /java-wtc-api/v1/rag/ingest/corpus
+    Admin->>Ctrl: POST /nodejs-wtc-api/v1/portfolio-reviews/rag/ingest
     activate Ctrl
-    Ctrl->>IngestSvc: ingestCorpusDirectory()
+    Ctrl->>IngestSvc: ingestAllSources()
     activate IngestSvc
 
     loop For each PDF in assets/rag-sources/{factsheets, sids, riskometer, expenses}
-        IngestSvc->>Parser: extractPages(pdfFile)
+        IngestSvc->>Parser: extractPages(filePath | buffer)
         activate Parser
-        Parser-->>IngestSvc: List<ExtractedPdfPage> (pageNumber, cleanText)
+        Note over Parser: Splits by /Type /Page markers &<br/>extracts literal BT...ET streams (zero disk I/O)
+        Parser-->>IngestSvc: ExtractedPdfPage[] (pageNumber, cleanText)
         deactivate Parser
 
-        IngestSvc->>Chunker: chunkDocumentPages(pages, filename, fundName, isin)
+        IngestSvc->>Chunker: chunkDocumentPages(pages, filename, schemeName, isin)
         activate Chunker
         Note over Chunker: Splits at natural paragraphs (~1,200 chars)<br/>with 200 char overlapping sliding window
-        Chunker-->>IngestSvc: List<ProcessedChunk> (text, index, metadataJson)
+        Chunker-->>IngestSvc: ProcessedChunk[] (chunkIndex, chunkText, metadata)
         deactivate Chunker
 
         loop For each ProcessedChunk
@@ -1772,52 +1772,157 @@ sequenceDiagram
             EmbedSvc->>GeminiAPI: POST /models/text-embedding-004:embedContent
             activate GeminiAPI
             alt HTTP 200 OK
-                GeminiAPI-->>EmbedSvc: float[768] vector
+                GeminiAPI-->>EmbedSvc: number[768] vector
             else HTTP 429 Rate Limit / 5xx Server Error
                 Note over EmbedSvc: Retry with exponential backoff & randomized jitter (±20%)
                 EmbedSvc->>GeminiAPI: Retry attempt
-                GeminiAPI-->>EmbedSvc: float[768] vector
+                GeminiAPI-->>EmbedSvc: number[768] vector
             else Offline / Unconfigured Key
                 Note over EmbedSvc: Fallback to deterministic normalized 768-dim hash vector
                 EmbedSvc-->>EmbedSvc: generateDeterministicEmbedding(chunkText)
             end
             deactivate GeminiAPI
-            EmbedSvc-->>IngestSvc: float[768] embedding
+            EmbedSvc-->>IngestSvc: number[768] embedding
             deactivate EmbedSvc
         end
 
-        Note over IngestSvc,PG: Enforce Idempotency in @Transactional Scope
-        IngestSvc->>Repo: deleteByIsinAndDocumentType(isin, docType)
-        Repo->>PG: DELETE FROM fund_document_embeddings WHERE isin = ? AND document_type = ?
-        IngestSvc->>Repo: saveAll(entities)
-        Repo->>PG: INSERT INTO fund_document_embeddings (isin, chunk_text, embedding, ...)
+        Note over IngestSvc,Mongo: Enforce Strict Idempotency via (isin, documentType)
+        IngestSvc->>Mongo: FundDocumentEmbedding.deleteMany({ isin, documentType })
+        activate Mongo
+        Mongo-->>IngestSvc: { acknowledged: true, deletedCount }
+        deactivate Mongo
+
+        IngestSvc->>Mongo: FundDocumentEmbedding.insertMany(documentsToInsert)
+        activate Mongo
+        Mongo-->>IngestSvc: Inserted document chunks
+        deactivate Mongo
     end
 
-    IngestSvc-->>Ctrl: IngestionSummary (filesProcessed, totalChunks, durationMs)
+    IngestSvc-->>Ctrl: IngestionSummaryDto (documentsProcessed, chunksCreated, elapsedMs)
     deactivate IngestSvc
-    Ctrl-->>Admin: HTTP 200 OK (IngestionSummary JSON)
+    Ctrl-->>Admin: HTTP 200 OK (IngestionSummaryDto JSON)
     deactivate Ctrl
 ```
 
-#### 5.2 Flowchart: Candidate-Grounded Hybrid Retrieval Pipeline
-Illustrates the candidate-constrained vector retrieval flow, preventing LLM hallucinations by restricting searches exclusively to portfolio-eligible schemes.
+#### 5.2 Flowchart: Candidate-Grounded Hybrid Retrieval & Automated Query Refinement Pipeline
+Illustrates candidate-constrained retrieval combining 70% dense semantic embeddings and 30% lexical keyword matching, guarded by an Evidence Quality Gate ($\ge 0.70$) and deterministic query refinement loop.
 
 ```mermaid
 flowchart TD
-    UserQuery["User Investment Query / Portfolio Rebalancing Context"] --> FilterCandidates["1. Candidate Fund Filtering<br/>(Extract ISINs from Eligible Funds in Client Risk Category)"]
+    UserQuery["Advisor / RM Investment Query + Client Context"] --> PreFilter["1. Candidate Fund Pre-Filtering Gate<br/>Resolve Client Risk Assessment -> Extract Candidate ISINs"]
     
-    FilterCandidates --> EmbedQuery["2. Query Vector Generation<br/>(Gemini text-embedding-004: 768 Dimensions)"]
+    PreFilter --> QueryEmbed["2. Dense Query Vector Generation<br/>(geminiEmbeddingService: text-embedding-004, 768-dim)"]
     
-    EmbedQuery --> VectorSearch["3. Candidate-Constrained pgvector Search<br/>WHERE isin IN (candidateIsins)"]
+    QueryEmbed --> MongoFetch["3. Candidate Chunk Retrieval<br/>FundDocumentEmbedding.find({ isin: { $in: candidateIsins } })"]
     
-    VectorSearch --> CosineSim["4. Cosine Similarity Calculation<br/>1 - (chunk_embedding <=> query_embedding)"]
+    MongoFetch --> HybridScoring["4. Hybrid In-Memory Scoring Engine<br/>Score = 0.70 * CosineSimilarity + 0.30 * LexicalScore"]
     
-    CosineSim --> QualityGate{"5. Quality Gate<br/>Similarity >= 0.65?"}
+    HybridScoring --> QualityGate{"5. Evidence Quality Gate<br/>maxSemanticScore >= 0.70?"}
     
-    QualityGate -- "Yes (High Relevance)" --> GroundedContext["6. Build Grounded LLM Prompt<br/>(Top-K Authentic Factsheet/SID Excerpts + ISIN Citations)"]
-    QualityGate -- "No (Low Relevance / Empty)" --> FallbackNotice["6. Defensive Degradation<br/>(Inform user: 'No sufficiently relevant fund disclosures found')"]
+    QualityGate -- "No (Score < 0.70)" --> RefinementCheck{"Refinement Attempted?"}
     
-    GroundedContext --> CopilotReasoning["7. Multi-Agent Copilot Synthesis<br/>(Strictly Fact-Grounded Recommendation Proposal)"]
+    RefinementCheck -- "First Attempt" --> QueryRefiner["6. Automated Query Refinement Loop<br/>(ragQueryRefinerService Expands Canonical Terms)"]
+    
+    QueryRefiner --> ReRetrieval["7. Candidate Re-Retrieval with Refined Query"]
+    
+    ReRetrieval --> PostRefineGate{"Refined Score >= 0.70<br/>or Higher than Initial?"}
+    
+    PostRefineGate -- "Yes (Improved)" --> AssembleContext["8. Assemble Grounded Context<br/>(Ranked Top-K Authentic Disclosures + [Source N] Citations)"]
+    
+    PostRefineGate -- "No (Still Insufficient)" --> DefensiveDegradation["8. Defensive Degradation (Bypass LLM)<br/>Return Structured Disclaimer: Insufficient Verified Disclosures"]
+    
+    RefinementCheck -- "Already Refined" --> DefensiveDegradation
+    
+    QualityGate -- "Yes (Score >= 0.70)" --> AssembleContext
+    
+    AssembleContext --> GeminiGen["9. Gemini 2.0 Flash Grounded Synthesis<br/>(Strict System Guardrails + Inline Citations)"]
+```
+
+#### 5.3 Sequence Diagram: End-to-End PII-Protected Grounded Synthesis & Rehydration Flow
+Illustrates the full end-to-end request lifecycle: client PII tokenization (forward pass), candidate-constrained hybrid retrieval with automated refinement, grounded synthesis with Gemini 2.0 Flash, de-tokenization/rehydration (backward pass), and unified Prometheus/Loki telemetry recording.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Advisor as Relationship Manager / Advisor (UI)
+    participant Ctrl as ragController
+    participant SynthSvc as ragSynthesisService
+    participant ClientDB as Client & ClientProfile (MongoDB)
+    participant PIIGateway as piiProtectionGateway
+    participant RetrSvc as ragRetrievalService
+    participant Refiner as ragQueryRefinerService
+    participant GenSvc as geminiGenerationService
+    participant GeminiAPI as Google Gemini API (gemini-2.0-flash)
+    participant Metrics as Metrics & ragEvaluationTelemetryService
+
+    Advisor->>Ctrl: POST /nodejs-wtc-api/v1/portfolio-reviews/rag/query
+    activate Ctrl
+    Ctrl->>SynthSvc: queryAndSynthesize(RagQueryRequestDto)
+    activate SynthSvc
+
+    opt Client ID Provided
+        SynthSvc->>ClientDB: findById(clientId) & findOne({ client: id })
+        ClientDB-->>SynthSvc: ClientIdentityContext (firstName, PAN, phone, email)
+    end
+
+    Note over SynthSvc,PIIGateway: Forward Pass: Redact Client PII before LLM Egress
+    SynthSvc->>PIIGateway: tokenize(query, clientContext)
+    activate PIIGateway
+    Note over PIIGateway: Deterministic Known Entity Redaction + Regex Fallback<br/>Generates surrogate tokens: {{CLIENT_NAME_1}}, {{CLIENT_PAN_1}}
+    PIIGateway-->>SynthSvc: PiiTokenizationResult { sanitizedText, ephemeralTokenVault }
+    deactivate PIIGateway
+
+    SynthSvc->>RetrSvc: retrieveEvidence(RagRetrievalRequestDto)
+    activate RetrSvc
+    Note over RetrSvc: 1. Resolve candidate ISINs via RiskAssessment<br/>2. In-memory Hybrid Ranking (0.70 vector + 0.30 lexical)<br/>3. Evaluate Quality Gate (threshold >= 0.70)
+    RetrSvc-->>SynthSvc: RagRetrievalResponseDto (isSufficient, topScore, evidenceChunks)
+    deactivate RetrSvc
+
+    alt Quality Gate Fails (!isSufficient)
+        SynthSvc->>Refiner: refineQuery(query)
+        activate Refiner
+        Note over Refiner: Rule-based canonical term expansion<br/>(TER, Riskometer, Holdings, ELSS)
+        Refiner-->>SynthSvc: RefinedQueryResult (refinedQuery, strategy)
+        deactivate Refiner
+
+        SynthSvc->>RetrSvc: retrieveEvidence(refinedRequestDto)
+        activate RetrSvc
+        RetrSvc-->>SynthSvc: Retry RagRetrievalResponseDto
+        deactivate RetrSvc
+    end
+
+    alt Evidence Still Insufficient (Score < 0.70)
+        Note over SynthSvc: Defensive Degradation: Bypass LLM to Prevent Hallucinations
+        SynthSvc->>Metrics: ragSynthesisTotal.inc({ grounded: 'false' })
+        SynthSvc-->>Ctrl: RagQueryResponseDto (isGrounded: false, defensiveAnswer)
+    else Evidence Meets Quality Gate (Score >= 0.70)
+        Note over SynthSvc: Assemble Grounded Prompt with System Guardrails & [Source N] Tags
+        SynthSvc->>GenSvc: generateGroundedResponse(systemInstruction, groundedPrompt, temp=0.2)
+        activate GenSvc
+        GenSvc->>GeminiAPI: POST /models/gemini-2.0-flash:generateContent
+        activate GeminiAPI
+        GeminiAPI-->>GenSvc: HTTP 200 OK (Synthesized Text with Source Tags & {{TOKENS}})
+        deactivate GeminiAPI
+        GenSvc-->>SynthSvc: synthesizedRawAnswer
+        deactivate GenSvc
+
+        Note over SynthSvc,PIIGateway: Backward Pass: Rehydrate Surrogate Tokens
+        SynthSvc->>PIIGateway: rehydrate(synthesizedRawAnswer, tokenVault)
+        activate PIIGateway
+        PIIGateway-->>SynthSvc: rehydratedAnswer (Authentic Client Attributes Restored)
+        deactivate PIIGateway
+
+        SynthSvc->>Metrics: Record Latency & Observability Metrics
+        activate Metrics
+        Note over Metrics: rag_synthesis_duration_seconds.observe(...)<br/>rag_synthesis_total.inc({ grounded: 'true' })
+        deactivate Metrics
+
+        SynthSvc-->>Ctrl: RagQueryResponseDto (answer, citations, evidenceChunks, latencies)
+    end
+    deactivate SynthSvc
+
+    Ctrl-->>Advisor: HTTP 200 OK (RagQueryResponseDto JSON)
+    deactivate Ctrl
 ```
 
 ---

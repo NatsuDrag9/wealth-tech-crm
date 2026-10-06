@@ -218,7 +218,15 @@ The following observability servers are configured and runnable via Docker Compo
 
 ### Custom RAG & Agentic Telemetry Metrics
 
-In addition to default OS and HTTP request duration histograms (`http_request_duration_seconds`), `backend-nodejs/src/common/metrics/metrics.ts` exposes custom AI-native metrics matching the unified schema across both Java and Node.js backends:
+The CRM links RAG and evaluation benchmark metrics directly to the telemetry stack (`MeterRegistry` $\rightarrow$ Prometheus $\rightarrow$ Grafana) across both backend implementations:
+
+#### 1. Java / Spring Boot Telemetry Linkage (`backend-java`)
+* **Instrumentation (`RagEvaluationTelemetryService`)**: Registers gauges, distribution summaries, counters, and timers directly into Micrometer's `MeterRegistry`.
+* **Actuator Scrape Pipeline**: Spring Boot Actuator exposes these meters in Prometheus exposition format at `GET /actuator/prometheus` (configured in `application.yml` under `management.endpoints.web.exposure.include: health,info,prometheus`).
+* **Prometheus Scraping**: The Prometheus container (`crm-prometheus` configured in `monitoring/prometheus/prometheus.yml`) polls `backend-java:8080/actuator/prometheus` on a 5-second interval.
+* **Evaluator & Benchmark Hook**: As unit or integration benchmarks execute (e.g. `FactCheckingEvaluator`, `RelevancyEvaluator`, `RagRetrievalBenchmarkTest`), scores, latencies, and pass/fail verdicts are published to the telemetry service in real time.
+
+#### 2. Exposed AI & RAG Metrics Schema
 - `rag_retrieval_duration_seconds`: Histogram tracking hybrid search latency across vector and keyword indexes.
 - `rag_similarity_score`: Histogram capturing cosine similarity distribution of retrieved document chunks.
 - `rag_eval_faithfulness_score`: Gauge (0.0 - 1.0) assessing factual grounding against retrieved document context (zero hallucination).
