@@ -19,6 +19,7 @@ import {
   getEcasDownloadUrl,
   getRecommendationDownloadUrl,
 } from '../controllers/portfolioController';
+import { ragController } from '../controllers/ragController';
 
 const router = Router();
 
@@ -139,6 +140,26 @@ router.get(
   '/documents/recommendations/:filename',
   requirePermission('portfolioreview:read'),
   downloadRecommendationPdf
+);
+
+// 6. AI-Native RAG & Grounded Synthesis
+router.post(
+  '/portfolio-reviews/rag/ingest',
+  requirePermission('portfolioreview:create'),
+  upload.single('file'),
+  ragController.ingestCorpus.bind(ragController)
+);
+
+router.post(
+  '/portfolio-reviews/rag/retrieve',
+  requirePermission('portfolioreview:read'),
+  ragController.retrieveEvidence.bind(ragController)
+);
+
+router.post(
+  '/portfolio-reviews/rag/query',
+  requirePermission('portfolioreview:read'),
+  ragController.queryAndSynthesize.bind(ragController)
 );
 
 export default router;
