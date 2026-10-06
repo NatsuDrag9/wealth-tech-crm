@@ -43,6 +43,23 @@ public class GeminiGenerationService {
     private final ResilienceProperties resilienceProperties;
     private final MeterRegistry meterRegistry;
 
+    /**
+     * Ordered cascade of fallback generation models.
+     * When the primary model exhausts its quota (HTTP 429), the service immediately
+     * cascades through this list rather than burning retries on an exhausted quota.
+     */
+    private static final List<String> FALLBACK_MODEL_CASCADE = List.of(
+            "gemini-3.5-flash",
+            "gemini-flash-latest"
+    );
+
+    /**
+     * Honest sentinel returned when all models (primary + fallbacks) are unavailable.
+     */
+    public static final String SYNTHESIS_UNAVAILABLE_SENTINEL =
+            "[SYNTHESIS_UNAVAILABLE: The AI generation service is temporarily at capacity. " +
+            "The retrieved evidence chunks are available for manual review.]";
+
     public GeminiGenerationService(
             @Value("${gemini.api-key:}") String apiKey,
             @Value("${gemini.api-base-url:https://generativelanguage.googleapis.com/v1beta/models}") String apiBaseUrl,
@@ -87,6 +104,19 @@ public class GeminiGenerationService {
      * @param temperatureOverride optional temperature override; falls back to defaultTemperature if null
      * @return generated answer text
      */
+    public static boolean isSynthesisUnavailable(String answer) {
+        return answer != null && answer.startsWith("[SYNTHESIS_UNAVAILABLE:");
+    }
+
+    /**
+     * Synthesizes an answer using Gemini grounded generation based strictly on provided evidence.
+     * <p>
+     * Resiliency & Fallback Strategy:
+     * 1. Attempt primary model (e.g. gemini-3.8-flash).
+     * 2. On HTTP 503/transient: retry up to maxRetries with backoff + jitter on same model.
+     * 3. On HTTP 429 (quota exhausted): immediately cascade to next fallback model without burning useless retries.
+     * 4. If all models exhausted: return honest SYNTHESIS_UNAVAILABLE_SENTINEL.
+     */
     public String generateGroundedResponse(String systemInstruction, String userPrompt, Double temperatureOverride) {
         if (userPrompt == null || userPrompt.isBlank()) {
             return "No prompt provided for generation.";
@@ -101,14 +131,50 @@ public class GeminiGenerationService {
                 ? temperatureOverride
                 : defaultTemperature;
 
+        Timer.Sample sample = Timer.start(meterRegistry);
+
+        // 1. Try primary configured model
+        String result = executeGenerateWithModel(generationModel, systemInstruction, userPrompt, resolvedTemperature, sample);
+        if (result != null) {
+            return result;
+        }
+
+        // 2. Cascade through fallback models on quota exhaustion (429)
+        for (String fallbackModel : FALLBACK_MODEL_CASCADE) {
+            if (fallbackModel.equalsIgnoreCase(generationModel)) {
+                continue;
+            }
+            log.warn("Primary model '{}' unavailable or quota exhausted. Cascading to fallback model '{}'",
+                    generationModel, fallbackModel);
+            meterRegistry.counter("rag_generation_calls_total", "status", "cascade_" + fallbackModel).increment();
+            result = executeGenerateWithModel(fallbackModel, systemInstruction, userPrompt, resolvedTemperature, sample);
+            if (result != null) {
+                return result;
+            }
+        }
+
+        // 3. All models exhausted: Return honest capacity sentinel instead of fake offline text
+        log.error("All generation models in cascade exhausted (primary '{}' + {} fallbacks). Returning unavailable sentinel.",
+                generationModel, FALLBACK_MODEL_CASCADE.size());
+        sample.stop(Timer.builder("rag_generation_latency_seconds").tag("status", "all_quota_exhausted").register(meterRegistry));
+        meterRegistry.counter("rag_generation_calls_total", "status", "all_quota_exhausted").increment();
+        return SYNTHESIS_UNAVAILABLE_SENTINEL;
+    }
+
+    private String executeGenerateWithModel(
+            String modelName,
+            String systemInstruction,
+            String userPrompt,
+            double resolvedTemperature,
+            Timer.Sample sample) {
+
         ResilienceProperties.RetryPolicy policy = resilienceProperties.getGemini();
         int maxRetries = policy.getMaxRetries();
         int attempt = 0;
-        Timer.Sample sample = Timer.start(meterRegistry);
 
         while (true) {
             try {
-                String endpoint = String.format("%s/%s:generateContent?key=%s", apiBaseUrl, generationModel, apiKey);
+                String endpoint = String.format("%s/%s:generateContent?key=%s", apiBaseUrl, modelName, apiKey);
 
                 Map<String, Object> contentsPart = Map.of("text", userPrompt);
                 Map<String, Object> content = Map.of("role", "user", "parts", List.of(contentsPart));
@@ -119,7 +185,7 @@ public class GeminiGenerationService {
                 Map<String, Object> generationConfig = new HashMap<>();
                 generationConfig.put("temperature", resolvedTemperature);
                 generationConfig.put("maxOutputTokens", 2048);
-                if (generationModel != null && (generationModel.contains("3.") || generationModel.contains("2.5"))) {
+                if (modelName != null && (modelName.contains("3.") || modelName.contains("2.5"))) {
                     generationConfig.put("thinkingConfig", Map.of("thinkingBudget", 0));
                 }
 
@@ -153,58 +219,58 @@ public class GeminiGenerationService {
                     if (!textNode.isMissingNode()) {
                         sample.stop(Timer.builder("rag_generation_latency_seconds")
                                 .tag("status", "success")
+                                .tag("model", modelName)
                                 .register(meterRegistry));
-                        meterRegistry.counter("rag_generation_calls_total", "status", "success").increment();
+                        meterRegistry.counter("rag_generation_calls_total", "status", "success", "model", modelName).increment();
                         return textNode.asText().trim();
                     }
                 }
 
-                boolean isRetryable = (statusCode == 429 || statusCode >= 500);
+                // HTTP 429: Quota exhausted. Retrying the same model is pointless. Signal cascade immediately.
+                if (statusCode == 429) {
+                    log.warn("Gemini model '{}' quota exhausted (HTTP 429). Triggering immediate model cascade.", modelName);
+                    meterRegistry.counter("rag_generation_calls_total", "status", "quota_exhausted", "model", modelName).increment();
+                    return null;
+                }
 
-                if (isRetryable && attempt < maxRetries) {
+                // HTTP 503 or transient 5xx: Server load spike. Retry with backoff on the SAME model.
+                boolean isTransient = (statusCode >= 500);
+                if (isTransient && attempt < maxRetries) {
                     long backoffDelay = resilienceProperties.calculateBackoffWithJitter(attempt, policy);
-                    log.warn("Gemini generateContent returned transient status {}. Retrying attempt {}/{} in {} ms",
-                            statusCode, attempt + 1, maxRetries, backoffDelay);
+                    log.warn("Gemini model '{}' returned transient status {}. Retrying attempt {}/{} in {} ms",
+                            modelName, statusCode, attempt + 1, maxRetries, backoffDelay);
                     Thread.sleep(backoffDelay);
                     attempt++;
                     continue;
                 }
 
-                log.warn("Gemini generateContent returned status {}: {}. Falling back to local generation.",
-                        statusCode, response.body());
-                sample.stop(Timer.builder("rag_generation_latency_seconds")
-                        .tag("status", "fallback")
-                        .register(meterRegistry));
-                meterRegistry.counter("rag_generation_calls_total", "status", "fallback_error").increment();
-                return generateLocalFallback(userPrompt);
+                log.warn("Gemini model '{}' failed with status {}. Body: {}", modelName, statusCode, response.body());
+                return null;
 
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                log.error("Interrupted during Gemini generation retry backoff: {}", ie.getMessage());
+                log.error("Interrupted during Gemini retry backoff for model '{}': {}", modelName, ie.getMessage());
                 meterRegistry.counter("rag_generation_calls_total", "status", "interrupted").increment();
-                return generateLocalFallback(userPrompt);
+                return null;
             } catch (Exception e) {
                 if (attempt < maxRetries) {
                     long backoffDelay = resilienceProperties.calculateBackoffWithJitter(attempt, policy);
-                    log.warn("Exception invoking Gemini generation API (attempt {}/{}): {}. Retrying in {} ms",
-                            attempt + 1, maxRetries, e.getMessage(), backoffDelay);
+                    log.warn("Exception invoking Gemini model '{}' (attempt {}/{}): {}. Retrying in {} ms",
+                            modelName, attempt + 1, maxRetries, e.getMessage(), backoffDelay);
                     try {
                         Thread.sleep(backoffDelay);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         log.error("Interrupted during retry backoff: {}", ie.getMessage());
-                        return generateLocalFallback(userPrompt);
+                        return null;
                     }
                     attempt++;
                     continue;
                 }
 
-                log.error("Exception invoking Gemini generation API: {}. Falling back to local synthesis.", e.getMessage(), e);
-                sample.stop(Timer.builder("rag_generation_latency_seconds")
-                        .tag("status", "fallback")
-                        .register(meterRegistry));
-                meterRegistry.counter("rag_generation_calls_total", "status", "fallback_exception").increment();
-                return generateLocalFallback(userPrompt);
+                log.error("Exception invoking Gemini model '{}' after {} attempts: {}", modelName, maxRetries, e.getMessage(), e);
+                meterRegistry.counter("rag_generation_calls_total", "status", "exception", "model", modelName).increment();
+                return null;
             }
         }
     }

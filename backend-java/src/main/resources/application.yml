@@ -84,11 +84,13 @@ gemini:
 rag:
   similarity-threshold: ${RAG_SIMILARITY_THRESHOLD:0.65}
   top-k: ${RAG_TOP_K:5}
+  conversation:
+    max-history-turns: ${RAG_MAX_HISTORY_TURNS:3}
 
 resilience:
   defaults:
-    max-retries: 3
-    base-delay-ms: 1000
+    max-retries: 5
+    base-delay-ms: 2000
     max-delay-ms: 10000
     jitter-percent: 20
     connect-timeout-ms: 15000
