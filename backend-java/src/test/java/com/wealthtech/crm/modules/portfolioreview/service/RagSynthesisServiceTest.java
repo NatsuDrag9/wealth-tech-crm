@@ -167,4 +167,156 @@ class RagSynthesisServiceTest {
         assertThat(response.citations()).hasSize(1);
         assertThat(response.citations().get(0)).contains("[Source 1] HDFC Top 100");
     }
+
+    @Test
+    @DisplayName("Should inject prior dialogue turns into LLM prompt and persist new turn in conversation memory")
+    void testMultiTurnConversationMemoryInjectsPriorTurnsAndPersistsNewTurn() {
+        String convId = "conv-session-123";
+
+        com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn priorTurn1 =
+                com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn.builder()
+                        .conversationId(convId)
+                        .turnIndex(1)
+                        .userQuery("What is Parag Parikh Flexi Cap exit load?")
+                        .synthesizedAnswer("Exit load is 2% within 365 days, 1% within 730 days.")
+                        .isGrounded(true)
+                        .build();
+
+        com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn priorTurn2 =
+                com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn.builder()
+                        .conversationId(convId)
+                        .turnIndex(2)
+                        .userQuery("What is its expense ratio?")
+                        .synthesizedAnswer("Its Total Expense Ratio is 0.63% inclusive of GST.")
+                        .isGrounded(true)
+                        .build();
+
+        when(turnRepository.findByConversationIdOrderByTurnIndexAsc(convId))
+                .thenReturn(List.of(priorTurn1, priorTurn2));
+        when(turnRepository.findMaxTurnIndexByConversationId(convId)).thenReturn(2);
+
+        RagQueryRequest followUpRequest = new RagQueryRequest(
+                "How does HDFC Top 100 compare to that?",
+                convId,
+                null,
+                List.of("INF179K01BE2"),
+                5,
+                0.65,
+                0.1
+        );
+
+        when(piiProtectionGateway.tokenize(any(), any(), any()))
+                .thenReturn(new PiiTokenizationResult(followUpRequest.query(), Collections.emptyMap()));
+
+        RetrievedEvidenceChunk hdfcChunk = new RetrievedEvidenceChunk(
+                2L,
+                "INF179K01BE2",
+                "HDFC Top 100",
+                "FACTSHEET",
+                "AGGRESSIVE",
+                "EQUITY",
+                0,
+                "HDFC Top 100 TER is 1.15% and exit load is 1% if redeemed within 1 year.",
+                0.80,
+                "{}",
+                java.time.LocalDateTime.now()
+        );
+
+        RagRetrievalResponse successfulRetrieval = new RagRetrievalResponse(
+                followUpRequest.query(),
+                true,
+                0.80,
+                0.80,
+                List.of("INF179K01BE2"),
+                List.of(hdfcChunk),
+                30,
+                "Sufficient evidence"
+        );
+        when(retrievalService.retrieveEvidence(any())).thenReturn(successfulRetrieval);
+
+        org.mockito.ArgumentCaptor<String> promptCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        when(generationService.generateGroundedResponse(anyString(), promptCaptor.capture(), anyDouble()))
+                .thenReturn("Compared to Parag Parikh's TER of 0.63%, HDFC Top 100 has a higher TER of 1.15% [Source 1].");
+
+        RagQueryResponse response = synthesisService.queryAndSynthesize(followUpRequest);
+
+        assertThat(response.conversationId()).isEqualTo(convId);
+        assertThat(response.turnIndex()).isEqualTo(3);
+        assertThat(response.isGrounded()).isTrue();
+
+        // Verify that prior conversation history was assembled into prompt
+        String capturedPrompt = promptCaptor.getValue();
+        assertThat(capturedPrompt).contains("### PRIOR CONVERSATION HISTORY");
+        assertThat(capturedPrompt).contains("What is Parag Parikh Flexi Cap exit load?");
+        assertThat(capturedPrompt).contains("What is its expense ratio?");
+        assertThat(capturedPrompt).contains("### CURRENT USER QUERY");
+        assertThat(capturedPrompt).contains("How does HDFC Top 100 compare to that?");
+
+        // Verify new turn was saved with turnIndex = 3
+        org.mockito.ArgumentCaptor<com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn> turnCaptor =
+                org.mockito.ArgumentCaptor.forClass(com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn.class);
+        verify(turnRepository).save(turnCaptor.capture());
+        com.wealthtech.crm.modules.portfolioreview.entity.RagConversationTurn savedTurn = turnCaptor.getValue();
+        assertThat(savedTurn.getConversationId()).isEqualTo(convId);
+        assertThat(savedTurn.getTurnIndex()).isEqualTo(3);
+        assertThat(savedTurn.getUserQuery()).isEqualTo(followUpRequest.query());
+        assertThat(savedTurn.getIsGrounded()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should detect SYNTHESIS_UNAVAILABLE sentinel and return ungrounded response with evidence for manual review")
+    void testSynthesisUnavailableSentinelDegradesGracefully() {
+        RagQueryRequest request = new RagQueryRequest(
+                "Explain ICICI Liquid Fund exit load",
+                "conv-capacity-1",
+                null,
+                List.of("INF109K01BE1"),
+                5,
+                0.65,
+                0.1
+        );
+
+        when(piiProtectionGateway.tokenize(any(), any(), any()))
+                .thenReturn(new PiiTokenizationResult(request.query(), Collections.emptyMap()));
+
+        RetrievedEvidenceChunk liquidChunk = new RetrievedEvidenceChunk(
+                3L,
+                "INF109K01BE1",
+                "ICICI Prudential Liquid Fund",
+                "FACTSHEET",
+                "LOW",
+                "DEBT",
+                0,
+                "Exit load Day 1: 0.0070%, Day 7 onwards: Nil.",
+                0.90,
+                "{}",
+                java.time.LocalDateTime.now()
+        );
+
+        RagRetrievalResponse successfulRetrieval = new RagRetrievalResponse(
+                request.query(),
+                true,
+                0.90,
+                0.90,
+                List.of("INF109K01BE1"),
+                List.of(liquidChunk),
+                25,
+                "Sufficient evidence"
+        );
+        when(retrievalService.retrieveEvidence(any())).thenReturn(successfulRetrieval);
+
+        // Generation service returns capacity exhaustion sentinel
+        when(generationService.generateGroundedResponse(anyString(), anyString(), anyDouble()))
+                .thenReturn(GeminiGenerationService.SYNTHESIS_UNAVAILABLE_SENTINEL);
+
+        RagQueryResponse response = synthesisService.queryAndSynthesize(request);
+
+        assertThat(response.isGrounded()).isFalse();
+        assertThat(response.synthesizedAnswer()).contains("[SYNTHESIS_UNAVAILABLE:");
+        assertThat(response.evidenceChunks()).hasSize(1);
+        assertThat(response.message()).contains("AI generation capacity reached");
+
+        // Verify turn was persisted with isGrounded = false
+        verify(turnRepository).save(any());
+    }
 }
