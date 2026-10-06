@@ -3,6 +3,7 @@ import { RagSynthesisService } from '../../src/modules/portfolioreview/services/
 import { ragRetrievalService } from '../../src/modules/portfolioreview/services/ragRetrievalService';
 import { geminiGenerationService } from '../../src/common/services/geminiGenerationService';
 import { geminiEmbeddingService } from '../../src/common/services/geminiEmbeddingService';
+import { ragEvaluationTelemetryService } from '../../src/modules/portfolioreview/services/ragEvaluationTelemetryService';
 import { GOLDEN_DATASET, GoldenDatasetEntry } from './goldenDataset';
 import { RagRetrievalResponseDto } from '../../src/modules/portfolioreview/dto/ragDto';
 
@@ -45,6 +46,9 @@ describe('RAG Generation Benchmark (Faithfulness, Relevance & Grounding Gates)',
 
       // Assert semantic relevance meets minimum threshold (>= 0.40)
       expect(similarity).toBeGreaterThanOrEqual(0.4);
+
+      ragEvaluationTelemetryService.recordRelevancy(similarity, true, 'EMBEDDING_COSINE', 10);
+      expect(ragEvaluationTelemetryService.getLatestRelevancyScore()).toBeGreaterThanOrEqual(0.4);
     }
   });
 
@@ -159,6 +163,9 @@ describe('RAG Generation Benchmark (Faithfulness, Relevance & Grounding Gates)',
     // Verify exact factual figures match ground truth (0.63% TER)
     expect(response.answer).toContain('0.63%');
     expect(response.answer).not.toContain('1.5%'); // No hallucinated expense ratio
+
+    ragEvaluationTelemetryService.recordFaithfulness(1.0, true, 'FACT_CHECKING', 12);
+    expect(ragEvaluationTelemetryService.getLatestFaithfulnessScore()).toBe(1.0);
   });
 
   it('should defensibly degrade on adversarial / out-of-scope query when evidence is absent', async () => {

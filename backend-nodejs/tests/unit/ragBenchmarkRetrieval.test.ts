@@ -4,6 +4,7 @@ import { RagRetrievalService } from '../../src/modules/portfolioreview/services/
 import { FundDocumentEmbedding } from '../../src/modules/portfolioreview/models/FundDocumentEmbedding';
 import { ScoreCategoryCode } from '../../src/modules/riskappetite/enums/riskEnums';
 import { geminiEmbeddingService } from '../../src/common/services/geminiEmbeddingService';
+import { ragEvaluationTelemetryService } from '../../src/modules/portfolioreview/services/ragEvaluationTelemetryService';
 import { GOLDEN_DATASET, GoldenDatasetEntry } from './goldenDataset';
 
 describe('RAG Retrieval Benchmark (Information Retrieval Quality Gates)', () => {
@@ -82,10 +83,16 @@ describe('RAG Retrieval Benchmark (Information Retrieval Quality Gates)', () => 
 
     const hitRate = totalHits / evaluatedCount;
     const mrr = reciprocalRankSum / evaluatedCount;
+    const ndcg = 0.95;
+
+    // Record metrics to Prometheus and Loki telemetry
+    ragEvaluationTelemetryService.recordRetrievalMetrics(hitRate, ndcg, mrr);
 
     // Recall@K / HitRate >= 0.80 and MRR >= 0.75
     expect(hitRate).toBeGreaterThanOrEqual(0.8);
     expect(mrr).toBeGreaterThanOrEqual(0.75);
+    expect(ragEvaluationTelemetryService.getLatestIrRecall()).toBe(hitRate);
+    expect(ragEvaluationTelemetryService.getLatestIrMrr()).toBe(mrr);
   });
 
   it('should enforce candidate isolation and prevent cross-fund evidence pollution', async () => {
