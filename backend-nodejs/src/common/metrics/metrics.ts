@@ -120,5 +120,55 @@ export const ragGenerationCallsTotal = new client.Counter({
   registers: [register],
 });
 
+// ==========================================
+// RAG Evaluation & Benchmark Telemetry Metrics
+// ==========================================
+export const ragEvalFaithfulnessScore = new client.Gauge({
+  name: 'rag_eval_faithfulness_score',
+  help: 'Latest grounded faithfulness evaluation score (0.0 - 1.0) assessing factual accuracy against context',
+  registers: [register],
+});
+
+export const ragEvalRelevancyScore = new client.Gauge({
+  name: 'rag_eval_relevancy_score',
+  help: 'Latest answer relevancy evaluation score (0.0 - 1.0) assessing semantic alignment to user query',
+  registers: [register],
+});
+
+export const ragEvalIrRecall = new client.Gauge({
+  name: 'rag_eval_ir_recall',
+  help: 'Latest IR Candidate-Grounded Recall@K metric across benchmark evaluation',
+  labelNames: ['k'] as const,
+  registers: [register],
+});
+
+export const ragEvalIrNdcg = new client.Gauge({
+  name: 'rag_eval_ir_ndcg',
+  help: 'Latest IR Normalized Discounted Cumulative Gain (NDCG@K) metric across benchmark evaluation',
+  labelNames: ['k'] as const,
+  registers: [register],
+});
+
+export const ragEvalIrMrr = new client.Gauge({
+  name: 'rag_eval_ir_mrr',
+  help: 'Latest IR Mean Reciprocal Rank (MRR) metric across benchmark evaluation',
+  registers: [register],
+});
+
+export const ragEvalRunsTotal = new client.Counter({
+  name: 'rag_eval_runs_total',
+  help: 'Total number of RAG evaluation runs',
+  labelNames: ['evaluator', 'judge_type', 'verdict'] as const,
+  registers: [register],
+});
+
+export const ragEvalDurationSeconds = new client.Histogram({
+  name: 'rag_eval_duration_seconds',
+  help: 'Latency of RAG evaluation execution in seconds',
+  labelNames: ['evaluator'] as const,
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+  registers: [register],
+});
+
 
 
