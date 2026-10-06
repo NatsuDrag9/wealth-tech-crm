@@ -160,6 +160,9 @@ flowchart TD
    - Gemini mirrors the tag in its response, and our backend decrypts it on the fly.
    - **Memory used: Zero bytes.** No maps, no caches, completely portable across Node.js instances, with zero memory leak risk. Trade-off: Small CPU cost for AES encryption/decryption. This is the recommended standard when high traffic and crypto resources are available.
 
+### RAG Evaluation Benchmark (Promptfoo)
+We chose **Promptfoo** over Python Ragas / Autoevals for its native Google Gemini support (`google:gemini-2.0-flash` with `GEMINI_API_KEY`), seamless TypeScript CI/CD integration, and built-in model-graded RAG assertions (`context-faithfulness`, `context-relevance`).
+
 ---
 
 ## Libraries & Ecosystem Choices
@@ -173,3 +176,4 @@ flowchart TD
 | **`multer`** | `^1.4.5-lts.1` | **In-Memory File Upload Streaming (`clientRoutes.ts`, `portfolioRoutes.ts`)**: Multipart/form-data middleware configured with `memoryStorage()` (10MB/15MB payload constraints). Feeds uploaded Excel sheets and eCAS statements directly into RAM buffers for S3 streaming without creating temporary files on disk. |
 | **`jsonwebtoken` & `bcryptjs`** | `^9.0.2` / `^2.4.3` | **Authentication & Password Security (`jwt.ts`, `authController.ts`)**: Manages one-way salted hashing for employee passwords and signs minimalist "Slim" JWTs (containing only email) to enforce real-time, stateful database permission checks on every protected request. |
 | **`mongoose`** | `^8.3.4` | **Document Modeling & Subdocument Embedding**: Manages schema validation, compound indexing, and lifecycle timestamps. Leveraged for embedded document modeling (`PortfolioReview.entries`, `PortfolioRecommendation.funds`, `RiskAssessment.answers`) to enable atomic updates and eliminate SQL join overhead. Global `toJSON` hooks ensure automatic data sanitization (`_id` to `id`, password suppression). |
+| **`promptfoo`** | `^0.100.0` (dev) | **RAG Evaluation Harness**: Evaluates RAG faithfulness and retrieval relevance using native Gemini (`google:gemini-2.0-flash`) in CI/CD without proxy shims. |
