@@ -1,0 +1,78 @@
+export type QueryType = 'FACTOID' | 'MULTI_HOP' | 'COMPARATIVE' | 'ADVERSARIAL_OUT_OF_SCOPE';
+
+export interface GoldenDatasetEntry {
+  id: string;
+  queryType: QueryType;
+  question: string;
+  candidateIsins: string[];
+  groundTruthAnswer: string;
+  groundTruthContextChunks: string[];
+  groundTruthChunkIds: number[];
+}
+
+export const GOLDEN_DATASET: GoldenDatasetEntry[] = [
+  {
+    id: 'eval-001',
+    queryType: 'FACTOID',
+    question: 'What is the Total Expense Ratio (TER) for Parag Parikh Flexi Cap Fund Direct Plan?',
+    candidateIsins: ['INF879O01019'],
+    groundTruthAnswer:
+      'The Total Expense Ratio (TER) for Parag Parikh Flexi Cap Fund Direct Plan is 0.63% (inclusive of GST).',
+    groundTruthContextChunks: [
+      'Parag Parikh Flexi Cap Fund - Direct Plan Total Expense Ratio (TER) as per disclosure is 0.63% inclusive of GST.',
+    ],
+    groundTruthChunkIds: [101],
+  },
+  {
+    id: 'eval-002',
+    queryType: 'MULTI_HOP',
+    question:
+      'What is the regulatory equity allocation mandate and SEBI riskometer rating for Parag Parikh Flexi Cap Fund?',
+    candidateIsins: ['INF879O01019'],
+    groundTruthAnswer:
+      "Parag Parikh Flexi Cap Fund has a regulatory asset allocation mandate to invest a minimum of 65% up to 100% in Indian equities, and its official SEBI riskometer rating is categorized as 'Very High'.",
+    groundTruthContextChunks: [
+      'Scheme Asset Allocation: Equity and equity related instruments: 65% to 100%.',
+      'Riskometer Classification: Very High Risk. Investors understand that their principal will be at very high risk.',
+    ],
+    groundTruthChunkIds: [102, 103],
+  },
+  {
+    id: 'eval-003',
+    queryType: 'FACTOID',
+    question: 'What is the exit load structure for ICICI Prudential Liquid Fund Direct Plan?',
+    candidateIsins: ['INF109K01BE1'],
+    groundTruthAnswer:
+      'ICICI Prudential Liquid Fund Direct Plan has a graded exit load structure spanning Day 1 (0.0070%) down to Day 7 (0.0045%), with Nil exit load on or after Day 8 from the date of investment.',
+    groundTruthContextChunks: [
+      'ICICI Prudential Liquid Fund Exit Load: Day 1: 0.0070%, Day 2: 0.0065%, Day 3: 0.0060%, Day 4: 0.0055%, Day 5: 0.0050%, Day 6: 0.0045%, Day 7 onwards: Nil.',
+    ],
+    groundTruthChunkIds: [201],
+  },
+  {
+    id: 'eval-004',
+    queryType: 'COMPARATIVE',
+    question:
+      'Compare the fund categories and portfolio focus of HDFC Top 100 Fund and Parag Parikh Flexi Cap Fund.',
+    candidateIsins: ['INF179K01BE2', 'INF879O01019'],
+    groundTruthAnswer:
+      'HDFC Top 100 Fund is a Large Cap fund with a mandate to invest at least 80% in top 100 bluechip companies by market capitalization, whereas Parag Parikh Flexi Cap Fund has flexibility to allocate across large, mid, and small cap equities (minimum 65% equity) along with international equities.',
+    groundTruthContextChunks: [
+      'HDFC Top 100 Fund is an open ended equity scheme predominantly investing in large cap stocks (minimum 80% in large cap).',
+      'Parag Parikh Flexi Cap Fund dynamically invests across large cap, mid cap, and small cap companies with a 65% minimum Indian equity threshold.',
+    ],
+    groundTruthChunkIds: [301, 102],
+  },
+  {
+    id: 'eval-005',
+    queryType: 'ADVERSARIAL_OUT_OF_SCOPE',
+    question: 'Does ICICI Prudential Liquid Fund hold equity derivatives or small cap stocks for high growth?',
+    candidateIsins: ['INF109K01BE1'],
+    groundTruthAnswer:
+      'No. ICICI Prudential Liquid Fund is a pure debt money market scheme investing strictly in short-term debt instruments and money market securities up to 91 days maturity. It does not invest in equities, small caps, or equity derivatives.',
+    groundTruthContextChunks: [
+      'ICICI Prudential Liquid Fund invests exclusively in debt and money market instruments with maturity up to 91 days. Equity allocation is 0%.',
+    ],
+    groundTruthChunkIds: [202],
+  },
+];
