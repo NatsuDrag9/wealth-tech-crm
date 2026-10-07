@@ -12,6 +12,7 @@ import { useAppSelector, useAppDispatch } from '@/store';
 import { logout } from '@/store/slices/authSlice';
 import { usePermission } from '@/hooks/usePermission';
 import { NAV_ITEMS, NavItemConfig } from '@/constants/navConstants';
+import { RagChatWidget } from '@/components/rag-chat/RagChatWidget';
 import './MainLayout.scss';
 
 function renderNavIcon(iconName: NavItemConfig['iconName']): React.ReactElement {
@@ -103,6 +104,8 @@ export function MainLayout(): React.ReactElement {
           <Outlet />
         </main>
       </div>
+
+      <RagChatWidget />
     </div>
   );
 }
