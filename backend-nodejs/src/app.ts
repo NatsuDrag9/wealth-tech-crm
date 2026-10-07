@@ -13,6 +13,7 @@ import userManagerRoutes from './modules/usermanager/routes/userManagerRoutes';
 import clientRoutes from './modules/customer/routes/clientRoutes';
 import riskRoutes from './modules/riskappetite/routes/riskRoutes';
 import portfolioRoutes from './modules/portfolioreview/routes/portfolioRoutes';
+import agentRoutes from './modules/agent/routes/agentRoutes';
 
 import { register, httpRequestDurationSeconds } from './common/metrics/metrics';
 
@@ -85,6 +86,8 @@ export const createApp = (): Application => {
   app.use(`${config.apiPrefix}/clients`, clientRoutes);
   app.use(config.apiPrefix, riskRoutes);
   app.use(config.apiPrefix, portfolioRoutes);
+  app.use(`${config.apiPrefix}/agent`, agentRoutes);
+  app.use(config.apiPrefix, agentRoutes);
 
   // 6. Unmatched Route Fallback
   app.all('*', (req: Request, _res: Response, next: NextFunction) => {
