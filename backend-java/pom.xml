@@ -154,6 +154,13 @@
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
 		</dependency>
+
+		<!-- Official Model Context Protocol (MCP) Java SDK -->
+		<dependency>
+			<groupId>io.modelcontextprotocol.sdk</groupId>
+			<artifactId>mcp</artifactId>
+			<version>0.7.0</version>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>
