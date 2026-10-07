@@ -2,6 +2,7 @@ import { AgentMode } from '../enums/agentEnums';
 import { IAgentStrategy } from './agentStrategy';
 import { vanillaAgentStrategy } from './impl/vanillaAgentStrategy';
 import { langGraphAgentStrategy } from './impl/langGraphAgentStrategy';
+import { mcpAgentStrategy } from './impl/mcpAgentStrategy';
 import { logger } from '../../../common/utils/logger';
 
 export class AgentStrategyResolver {
@@ -10,6 +11,7 @@ export class AgentStrategyResolver {
   constructor() {
     this.registerStrategy(vanillaAgentStrategy);
     this.registerStrategy(langGraphAgentStrategy);
+    this.registerStrategy(mcpAgentStrategy);
   }
 
   public registerStrategy(strategy: IAgentStrategy): void {
