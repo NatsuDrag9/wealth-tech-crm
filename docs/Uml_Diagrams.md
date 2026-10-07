@@ -1347,6 +1347,7 @@ flowchart LR
         PR["/portfolio-reviews, /portfolio-recommendations (portfolioRoutes)"]
         EF["/eligible-funds, /admin/master-funds (portfolioRoutes)"]
         RR["/risk-assessments (riskRoutes)"]
+        AGR["/agent (agentRoutes)"]
     end
 
     subgraph Controllers["Controller Handlers"]
@@ -1355,9 +1356,10 @@ flowchart LR
         CC["clientController"]
         PC["portfolioController"]
         RC["riskController"]
+        AGC["agentController"]
     end
 
-    subgraph Services["Domain Services & Cloud Processors"]
+    subgraph Services["Domain Services, Strategies & Cloud Processors"]
         AS["authService"]
         US["userService / groupService / roleService"]
         CS["clientService"]
@@ -1366,6 +1368,12 @@ flowchart LR
         PDS["portfolioPdfService (PDFKit in-RAM)"]
         EFS["eligibleFundExcelService (ExcelJS)"]
         RAS["raService"]
+        ASR["agentStrategyResolver"]
+        VAS["vanillaAgentStrategy"]
+        LGS["langGraphAgentStrategy (LangGraph StateGraph)"]
+        MAS["mcpAgentStrategy"]
+        MCPC["portfolioMcpClient"]
+        MCPS["portfolioMcpServer"]
     end
 
     AR --> AC --> AS
@@ -1374,6 +1382,11 @@ flowchart LR
     PR --> PC --> PRS & PDS
     EF --> PC --> EFS
     RR --> RC --> RAS
+    AGR --> AGC --> ASR
+    ASR -->|VANILLA| VAS
+    ASR -->|FRAMEWORK| LGS
+    ASR -->|MCP| MAS
+    MAS --> MCPC --> MCPS
 ```
 
 #### 1.4 Subsystem C: Persistence, AWS S3 & Physical Storage Tier
@@ -2335,4 +2348,308 @@ flowchart LR
     Actuator -->|"Scrape (15s interval)"| Prometheus
     MetricsEndpoint -->|"Scrape (15s interval)"| Prometheus
     Prometheus --> Grafana
+```
+
+---
+
+### 7. Autonomous Portfolio Advisory Agent Architecture (Node.js)
+
+#### 7.1 Macro Architectural Progression (Step 1 Vanilla $\rightarrow$ Step 2 LangGraph $\rightarrow$ Step 3 MCP)
+Illustrates the evolutionary progression of agent orchestration in `backend-nodejs` across the 3 standardized architectural tiers:
+
+```mermaid
+flowchart TD
+    subgraph UI["Relationship Manager Client Tier"]
+        Advisor["React CRM UI ('Perform with AI')"]
+    end
+
+    subgraph API["Presentation & Routing Tier"]
+        Route["POST /nodejs-wtc-api/v1/agent/run"]
+        Ctrl["AgentController"]
+        Resolver["AgentStrategyResolver"]
+    end
+
+    subgraph Strategies["3-Tier Execution Strategies (IAgentStrategy)"]
+        direction TB
+        S1["Step 1: VanillaAgentStrategy<br/>(Imperative ReAct Loop, Step Ledger, Max 8 Steps)"]
+        S2["Step 2: LangGraphAgentStrategy<br/>(StateGraph, Annotation.Root, Node Transitions)"]
+        S3["Step 3: McpAgentStrategy<br/>(Standardized Protocol Boundary, Client / Server)"]
+    end
+
+    subgraph MCPTier["Model Context Protocol (MCP) Boundary"]
+        MCPC["PortfolioMcpClient<br/>(@modelcontextprotocol/sdk/client)"]
+        Transport["===== InMemoryTransport (Linked Pair) ====="]
+        MCPS["PortfolioMcpServer<br/>(@modelcontextprotocol/sdk/server)"]
+    end
+
+    subgraph Tools["Domain Tool Ecosystem"]
+        direction LR
+        TR["ToolRegistry"]
+        T1["getClientDetails"]
+        T2["getRiskProfile"]
+        T3["getPortfolioHoldings"]
+        T4["searchEligibleFunds (Hybrid RAG)"]
+        T5["stageDraftProposal"]
+    end
+
+    subgraph Domain["Underlying Domain Services & Storage"]
+        ClientSvc["Client & Profile (MongoDB)"]
+        RiskSvc["RiskAssessment (MongoDB)"]
+        ReviewSvc["PortfolioReview (MongoDB)"]
+        RagSvc["ragRetrievalService (Embeddings + Lucene)"]
+        GeminiAPI["Google Gemini 2.0 Flash (Function Calling)"]
+    end
+
+    Advisor -->|HTTP POST| Route --> Ctrl --> Resolver
+    Resolver -->|AgentMode.VANILLA| S1
+    Resolver -->|AgentMode.FRAMEWORK| S2
+    Resolver -->|AgentMode.MCP| S3
+
+    S1 -->|Direct Invocation| TR
+    S2 -->|StateGraph toolExecutionNode| TR
+    S3 -->|JSON-RPC calls| MCPC
+    MCPC --- Transport --- MCPS
+    MCPS -->|Dispatches CallTool| TR
+
+    TR --> T1 & T2 & T3 & T4 & T5
+    T1 --> ClientSvc
+    T2 --> RiskSvc
+    T3 --> ReviewSvc
+    T4 --> RagSvc
+    T5 --> ReviewSvc
+
+    S1 -.->|Tool Declarations & Function Calling| GeminiAPI
+    S2 -.->|Tool Declarations & Function Calling| GeminiAPI
+    S3 -.->|MCP Schemas & Function Calling| GeminiAPI
+```
+
+#### 7.2 Class & Strategy Pattern Diagram
+Models the object-oriented structure, interfaces, strategy resolution, and tool contracts powering autonomous advisory orchestration:
+
+```mermaid
+classDiagram
+    class AgentMode {
+        <<enumeration>>
+        VANILLA
+        FRAMEWORK
+        MCP
+    }
+
+    class AgentStatus {
+        <<enumeration>>
+        SUCCESS
+        FAILED
+        MAX_STEPS_EXCEEDED
+    }
+
+    class IAgentStrategy {
+        <<interface>>
+        +AgentMode mode
+        +execute(AgentRunRequestDto) Promise~AgentRunResponseDto~
+    }
+
+    class AgentStrategyResolver {
+        -Map~AgentMode, IAgentStrategy~ strategies
+        +registerStrategy(IAgentStrategy) void
+        +resolve(AgentMode) IAgentStrategy
+        +getRegisteredModes() List~AgentMode~
+    }
+
+    class VanillaAgentStrategy {
+        +AgentMode mode = VANILLA
+        +execute(AgentRunRequestDto) Promise~AgentRunResponseDto~
+    }
+
+    class LangGraphAgentStrategy {
+        +AgentMode mode = FRAMEWORK
+        -buildStateGraph() CompiledGraph
+        -agentReasoningNode(state) Promise~PartialState~
+        -toolExecutionNode(state) Promise~PartialState~
+        -shouldContinue(state) String
+        +execute(AgentRunRequestDto) Promise~AgentRunResponseDto~
+    }
+
+    class McpAgentStrategy {
+        +AgentMode mode = MCP
+        -executeGeminiMcpLoop(...) Promise~Result~
+        -executeDeterministicMcpLoop(...) Promise~Result~
+        +execute(AgentRunRequestDto) Promise~AgentRunResponseDto~
+    }
+
+    class PortfolioMcpServer {
+        -McpServer server
+        +getServer() McpServer
+        -registerMcpTools() void
+    }
+
+    class PortfolioMcpClient {
+        -Client client
+        -Transport clientTransport
+        -Transport serverTransport
+        -boolean isConnected
+        +connect() Promise~void~
+        +listTools() Promise~List~
+        +callTool(String, Record) Promise~Record~
+        +disconnect() Promise~void~
+    }
+
+    class ToolRegistry {
+        -Map~String, AgentTool~ tools
+        +registerTool(AgentTool) void
+        +getTool(String) AgentTool
+        +getAllTools() List~AgentTool~
+        +getGeminiFunctionDeclarations() List~Object~
+        +executeTool(String, Record, AgentContext) Promise~Record~
+    }
+
+    class AgentTool {
+        <<interface>>
+        +String name
+        +String description
+        +Object parameters
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    class ClientTool {
+        +String name = "getClientDetails"
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    class RiskAssessmentTool {
+        +String name = "getRiskProfile"
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    class PortfolioReviewTool {
+        +String name = "getPortfolioHoldings"
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    class FundResearchRagTool {
+        +String name = "searchEligibleFunds"
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    class StageRecommendationDraftTool {
+        +String name = "stageDraftProposal"
+        +execute(Record, AgentContext) Promise~Record~
+    }
+
+    IAgentStrategy <|.. VanillaAgentStrategy
+    IAgentStrategy <|.. LangGraphAgentStrategy
+    IAgentStrategy <|.. McpAgentStrategy
+
+    AgentStrategyResolver o-- IAgentStrategy
+    McpAgentStrategy --> PortfolioMcpClient
+    PortfolioMcpClient ..> PortfolioMcpServer : "InMemoryTransport"
+    PortfolioMcpServer --> ToolRegistry
+    VanillaAgentStrategy --> ToolRegistry
+    LangGraphAgentStrategy --> ToolRegistry
+
+    ToolRegistry o-- AgentTool
+    AgentTool <|.. ClientTool
+    AgentTool <|.. RiskAssessmentTool
+    AgentTool <|.. PortfolioReviewTool
+    AgentTool <|.. FundResearchRagTool
+    AgentTool <|.. StageRecommendationDraftTool
+```
+
+#### 7.3 Sequence Diagram: Multi-Mode Autonomous Advisory Orchestration
+Demonstrates request lifecycle from the UI through Strategy Resolution, Dynamic Tool Calling across MCP/Framework boundaries, and Staged Proposal persistence:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor RM as Relationship Manager (UI)
+    participant Ctrl as AgentController
+    participant Resolver as AgentStrategyResolver
+    participant Strategy as IAgentStrategy (Vanilla / LangGraph / MCP)
+    participant MCPClient as PortfolioMcpClient
+    participant MCPServer as PortfolioMcpServer
+    participant Tools as ToolRegistry
+    participant Gemini as Gemini 2.0 Flash / LLM Cascade
+    participant DB as MongoDB & RAG Index
+
+    RM->>Ctrl: POST /nodejs-wtc-api/v1/agent/run (clientId, flowType, agentMode)
+    activate Ctrl
+    Ctrl->>Resolver: resolve(agentMode)
+    activate Resolver
+    Resolver-->>Ctrl: Selected Strategy Instance
+    deactivate Resolver
+
+    Ctrl->>Strategy: execute(AgentRunRequestDto)
+    activate Strategy
+
+    alt Mode == AgentMode.VANILLA (Step 1)
+        Note over Strategy: Imperative ReAct Loop (Max 8 Steps)<br/>Step Ledger Traces + Fallback
+        Strategy->>Tools: executeTool(name, args, context)
+    else Mode == AgentMode.FRAMEWORK (Step 2 - LangGraph)
+        Note over Strategy: StateGraph.invoke(initialState)<br/>START -> agentReasoningNode -> toolExecutionNode -> END
+        Strategy->>Tools: executeTool(name, args, context)
+    else Mode == AgentMode.MCP (Step 3 - Standardized Protocol)
+        Note over Strategy: Execute tool calls through MCP protocol boundary
+        Strategy->>MCPClient: callTool(name, args)
+        activate MCPClient
+        MCPClient->>MCPServer: JSON-RPC CallToolRequest over InMemoryTransport
+        activate MCPServer
+        MCPServer->>Tools: executeTool(name, args, context)
+        MCPServer-->>MCPClient: CallToolResult { content: [{ text: JSON }] }
+        deactivate MCPServer
+        MCPClient-->>Strategy: Parsed Tool Output
+        deactivate MCPClient
+    end
+
+    activate Tools
+    Tools->>DB: Query Client / RiskAssessment / eCAS Holdings / Factsheet Chunks
+    DB-->>Tools: Domain Records
+    Tools-->>Strategy: Structured Tool Observation
+    deactivate Tools
+
+    opt Live Gemini Key Configured
+        Strategy->>Gemini: generateContent(conversationHistory, toolDeclarations)
+        activate Gemini
+        Gemini-->>Strategy: FunctionCall(stageDraftProposal, allocations)
+        deactivate Gemini
+    end
+
+    Note over Strategy: Final Step: stageDraftProposal validates allocations & compliance
+    Strategy-->>Ctrl: AgentRunResponseDto (status: SUCCESS, stagedDraft, traces)
+    deactivate Strategy
+
+    Ctrl-->>RM: HTTP 200 OK (AgentRunResponseDto JSON)
+    deactivate Ctrl
+```
+
+#### 7.4 State Machine Diagram: LangGraph StateGraph Execution Workflow
+Models node states, graph transitions, and termination conditions within the LangGraph StateGraph engine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> START : Request Received (clientId, flowType, userGoal)
+
+    START --> agentReasoningNode : Initialize AgentGraphState & Messages
+
+    state agentReasoningNode {
+        [*] --> CheckTermination : Inspect isFinished, recommendationDraft, stepCount >= 8
+        CheckTermination --> Converged : Termination conditions met
+        CheckTermination --> EvaluateNextStep : Execution continues
+        EvaluateNextStep --> GenerateToolCall : Live Gemini function call OR Framework sequence
+    }
+
+    agentReasoningNode --> shouldContinue : Emit partial state update
+
+    state shouldContinue <<choice>>
+    shouldContinue --> toolExecutionNode : currentToolCall is present
+    shouldContinue --> END : isFinished == true OR stepCount >= 8 OR draft staged
+
+    state toolExecutionNode {
+        [*] --> InvokeTool : toolRegistry.executeTool(name, args, context)
+        InvokeTool --> RecordTrace : Compute durationMs & create AgentStepTraceDto
+        RecordTrace --> MutateState : Update scoreCategory, totalInvestable, or stagedDraft
+        MutateState --> AppendToolMessage : ToolMessage appended to messages array
+    }
+
+    toolExecutionNode --> agentReasoningNode : State mutated, loop back for next reasoning turn
+
+    END --> [*] : Assemble AgentRunResponseDto & return to caller
 ```

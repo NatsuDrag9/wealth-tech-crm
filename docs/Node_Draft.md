@@ -404,17 +404,121 @@ We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGene
 
 ---
 
+## Autonomous Portfolio Advisory Agent Architecture ("Perform with AI")
+
+### 1. Architectural Evolution & Multi-Mode Strategy Pattern
+The autonomous portfolio advisory agent coordinates complex SEBI-compliant portfolio restructuring proposals for Relationship Managers via `POST /nodejs-wtc-api/v1/agent/run`. The architecture follows an evolutionary 3-step paradigm:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           React CRM ("Perform with AI")                         │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │
+                         POST /nodejs-wtc-api/v1/agent/run
+                                         │
+┌────────────────────────────────────────▼────────────────────────────────────────┐
+│               AgentController & AgentStrategyResolver (Strategy Pattern)         │
+└───────┬────────────────────────────────┬────────────────────────────────┬───────┘
+        │                                │                                │
+┌───────▼────────────────────────┐┌──────▼────────────────────────┐┌──────▼───────┴────────────────┐
+│   Step 1: Vanilla ReAct Loop   ││   Step 2: AI Framework        ││   Step 3: MCP Protocol        │
+│   (AgentMode.VANILLA)          ││   (AgentMode.FRAMEWORK)       ││   (AgentMode.MCP)             │
+│                                ││                               ││                               │
+│ - Imperative ReAct Loop        ││ - LangGraph StateGraph        ││ - LangGraph / ReAct Loop      │
+│ - Max 8 Steps Guard            ││ - Annotation.Root State       ││ - PortfolioMcpClient          │
+│ - Step Trace Ledger            ││ - agentReasoningNode          ││            ===== MCP =====    │
+│ - Live Gemini / Local Fallback ││ - toolExecutionNode           ││ - PortfolioMcpServer          │
+└───────────────┬────────────────┘└──────────────┬────────────────┘└──────────────┬────────────────┘
+                │                                │                                │
+                └────────────────────────┬───────┴────────────────────────────────┘
+                                         │
+                                   Tool Calling
+                                         │
+┌────────────────────────────────────────▼────────────────────────────────────────┐
+│                 ToolRegistry (Domain Tool Ecosystem)                            │
+│  - getClientDetails         - getRiskProfile          - getPortfolioHoldings    │
+│  - searchEligibleFunds      - stageDraftProposal                                │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │
+┌────────────────────────────────────────▼────────────────────────────────────────┐
+│           Existing Domain Services & Storage Tier (MongoDB + Hybrid RAG)        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2. Multi-Mode Strategy Architecture (`agentStrategyResolver.ts`)
+The execution mode is controlled dynamically per request via the `agentMode` property in `AgentRunRequestDto`:
+- **`AgentMode.VANILLA` (`'vanilla'`)**: Dispatches to `VanillaAgentStrategy`, running an imperative ReAct loop.
+- **`AgentMode.FRAMEWORK` (`'framework'`)**: Dispatches to `LangGraphAgentStrategy`, executing a compiled LangGraph `StateGraph`.
+- **`AgentMode.MCP` (`'mcp'`)**: Dispatches to `McpAgentStrategy`, communicating exclusively through the Model Context Protocol boundary.
+
+### 3. Step 1: Vanilla ReAct Agent Execution (`agentExecutor.ts`)
+- **Turn-Bounded ReAct Loop**: Enforces `MAX_STEPS = 8` to guarantee termination and prevent infinite reasoning cycles.
+- **Step Ledger Audit Trail**: Each step captures an `AgentStepTraceDto`:
+  - `stepNumber`: Sequential iteration counter.
+  - `thought`: Internal LLM reasoning text or plan summary.
+  - `toolName`: The invoked tool name.
+  - `toolInput`: Validated arguments passed to the tool.
+  - `toolOutput`: Structured observation returned from domain services.
+  - `durationMs`: Per-step wall-clock latency measurement.
+  - `status`: `'SUCCESS' | 'FAILURE'`.
+- **Dynamic Gemini 2.0 Flash Function Calling**: When `GEMINI_API_KEY` is present, registers Gemini function declarations and manages conversational context with `functionCall` / `functionResponse` message turns.
+- **Deterministic Offline Fallback**: In development or CI/CD without live API credentials, executes an offline advisory sequence (Client $\rightarrow$ Risk Profile $\rightarrow$ Holdings $\rightarrow$ RAG Search $\rightarrow$ Stage Proposal) to achieve 100% automated testability.
+
+### 4. Step 2: AI Application Framework via LangGraph (`langGraphAgentStrategy.ts`)
+Replaces manual orchestration with framework abstractions using `@langchain/langgraph` and `@langchain/core`:
+- **State Annotation Schema (`AgentGraphState`)**:
+  - `messages`: Accumulating message history (`HumanMessage`, `AIMessage`, `ToolMessage`) using `Annotation<BaseMessage[]>`.
+  - `clientId`, `portfolioReviewId`, `flowType`, `userGoal`: Contextual immutable annotations.
+  - `traces`: Step trace accumulator reducer (`(x, y) => x.concat(y)`).
+  - `recommendationDraft`: Final staged draft state (`RecommendationDraftDto`).
+  - `currentToolCall`: Stored tool invocation payload.
+  - `stepCount`: Current step counter.
+  - `isFinished`: Termination signal.
+- **Graph Nodes & Edges**:
+  - `agentReasoningNode`: Inspects current state, determines whether to terminate or select next tool.
+  - `toolExecutionNode`: Executes the tool from `toolRegistry`, records telemetry, updates state variables, and returns a `ToolMessage`.
+  - `shouldContinue` (Conditional Edge): Routes to `toolExecutionNode` if `currentToolCall` is set, or transitions to `END` if `isFinished`, proposal staged, or `stepCount >= 8`.
+  - `toolExecutionNode` routes cyclically back to `agentReasoningNode`.
+
+### 5. Step 3: Standardized Tool Boundary via Model Context Protocol (`mcp/`)
+Introduces a standardized client/server boundary using `@modelcontextprotocol/sdk`:
+- **`PortfolioMcpServer` (`portfolioMcpServer.ts`)**:
+  - Implements standard `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js`.
+  - Registers all domain tools with Zod input validation schemas.
+  - Encapsulates domain logic behind the MCP protocol, returning standard `{ content: [{ type: 'text', text: JSON.stringify(result) }] }` envelopes.
+- **`PortfolioMcpClient` (`portfolioMcpClient.ts`)**:
+  - Connects to `PortfolioMcpServer` using `InMemoryTransport.createLinkedPair()`.
+  - Performs standard protocol handshakes and dynamically discovers tools via `client.listTools()`.
+  - Dispatches tool invocations across the JSON-RPC boundary via `client.callTool({ name, arguments })`.
+- **`McpAgentStrategy` (`mcpAgentStrategy.ts`)**:
+  - Orchestrates advisory rebalancing where every single tool interaction is forced across the MCP Client $\rightarrow$ MCP Server boundary.
+
+### 6. The 5 Core Domain Tools (`tools/`)
+| Tool Name | File | Purpose & Regulatory Grounding |
+|---|---|---|
+| **`getClientDetails`** | [`clientTool.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/agent/tools/clientTool.ts) | Queries client record and `ClientProfile` to verify KYC compliance status, PAN, and Relationship Manager assignment. |
+| **`getRiskProfile`** | [`riskAssessmentTool.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/agent/tools/riskAssessmentTool.ts) | Queries client's latest completed `RiskAssessment` to extract regulatory risk category (`VERY_CONSERVATIVE`, `CONSERVATIVE`, `MODERATE`, `AGGRESSIVE`, `VERY_AGGRESSIVE`) and total score. |
+| **`getPortfolioHoldings`** | [`portfolioReviewTool.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/agent/tools/portfolioReviewTool.ts) | Inspects existing eCAS statement line items, categorizes holdings marked for `SELL` vs `HOLD`, and calculates total investable exit proceeds. |
+| **`searchEligibleFunds`** | [`fundResearchRagTool.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/agent/tools/fundResearchRagTool.ts) | Executes candidate-grounded hybrid RAG retrieval over indexed mutual fund regulatory disclosures (factsheets, SIDs, TER, riskometers) filtered by client risk category. |
+| **`stageDraftProposal`** | [`stageRecommendationDraftTool.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/agent/tools/stageRecommendationDraftTool.ts) | Validates allocation mathematics ($100\%$ reinvestment check), verifies regulatory suitability constraints, and stages the finalized `RecommendationDraftDto` for advisor approval. |
+
+---
+
 ## Libraries & Ecosystem Choices
 
 | Library | Version | Core Use Case in this Application |
 |---|---|---|
 | **`@aws-sdk/client-s3` & `@aws-sdk/s3-request-presigner`** | `^3.1131.0` | **AWS S3 / LocalStack Cloud Object Storage (`s3Service.ts`)**: Manages in-memory file uploads and time-limited (15-min) cryptographic pre-signed URLs for master funds, prospect spreadsheets, eCAS statements, and recommendation PDFs. Configured with path-style access (`forcePathStyle: true`) and endpoint override for LocalStack parity. |
+| **`@langchain/core` & `@langchain/langgraph`** | `^0.3.x` | **Step 2 AI Application Framework (`langGraphAgentStrategy.ts`)**: StateGraph-based state machine orchestration engine. Defines graph state schemas via `Annotation.Root`, coordinates reasoning nodes and tool execution nodes, manages cyclic agent transitions, and guarantees turn-bounded termination. |
+| **`@modelcontextprotocol/sdk`** | `^1.32.1` | **Step 3 Standardized Tool Boundary (`portfolioMcpServer.ts`, `portfolioMcpClient.ts`)**: Standard Model Context Protocol implementation for Node.js. Exposes domain tools via `McpServer` with Zod validation and dispatches agent tool calls through `Client` over `InMemoryTransport`. |
 | **`pdfkit`** | `^0.15.0` | **In-Memory Client Proposal PDF Generation (`portfolioPdfService.ts`)**: Programmatically compiles vector-drawn, branded A4 investment recommendation proposals entirely in-memory (`Buffer.concat`) and streams directly to AWS S3 with zero local disk footprint. Renders metadata callout boxes, multi-column fund allocation tables with Indian currency formatting (`INR`), and mandatory SEBI regulatory risk disclaimers. |
 | **`exceljs`** | `^4.4.0` | **Bulk Client Onboarding & Template Generation (`clientExcelService.ts`, `eligibleFundExcelService.ts`)**: Generates pre-formatted, styled `.xlsx` download templates with locked headers, custom widths, and cell formats. Ingests and parses multi-row spreadsheets from memory buffers with strict zero-`any` type narrowing, safe Date parsing, dynamic column detection, and batch ingestion resilience. |
 | **`pino` & `pino-http`** | `^10.3.1` | **High-Throughput Structured JSON Logging (`logger.ts`)**: Fast, low-overhead logging engine enforcing the application-wide *logger-before-error* protocol. Enriches logs with HTTP request metadata (method, route, IP, user ID) and segregates operational warnings (`logger.warn`) from unhandled server exceptions (`logger.error`). |
-| **`prom-client`** | `^15.1.3` | **Production Prometheus Telemetry (`metrics.ts`)**: Registers and exposes application metrics (`/nodejs-wtc-api/v1/metrics`) across HTTP request latencies, S3 operations, PII tokenization timings, RAG hybrid retrieval/synthesis pipelines, and unified RAG evaluation benchmarks (`rag_eval_faithfulness_score`, `rag_eval_relevancy_score`, `rag_eval_ir_*`). |
+| **`prom-client`** | `^15.1.3` | **Production Prometheus Telemetry (`metrics.ts`)**: Registers and exposes application metrics (`/nodejs-wtc-api/v1/metrics`) across HTTP request latencies, S3 operations, PII tokenization timings, RAG hybrid retrieval/synthesis pipelines, agent iteration histograms, and unified RAG evaluation benchmarks. |
 | **`multer`** | `^1.4.5-lts.1` | **In-Memory File Upload Streaming (`clientRoutes.ts`, `portfolioRoutes.ts`)**: Multipart/form-data middleware configured with `memoryStorage()` (10MB/15MB payload constraints). Feeds uploaded Excel sheets and eCAS statements directly into RAM buffers for S3 streaming without creating temporary files on disk. |
 | **`jsonwebtoken` & `bcryptjs`** | `^9.0.2` / `^2.4.3` | **Authentication & Password Security (`jwt.ts`, `authController.ts`)**: Manages one-way salted hashing for employee passwords and signs minimalist "Slim" JWTs (containing only email) to enforce real-time, stateful database permission checks on every protected request. |
 | **`mongoose`** | `^8.3.4` | **Document Modeling & Subdocument Embedding**: Manages schema validation, compound indexing, and lifecycle timestamps. Leveraged for embedded document modeling (`PortfolioReview.entries`, `PortfolioRecommendation.funds`, `RiskAssessment.answers`) to enable atomic updates and eliminate SQL join overhead. Global `toJSON` hooks ensure automatic data sanitization (`_id` to `id`, password suppression). |
-| **`vitest`** | `^2.1.9` (dev) | **Unit Testing & RAG Benchmark Harness**: Fast TypeScript test runner executing deterministic unit suites and native RAG evaluation benchmarks (evaluating Faithfulness, Answer Relevance, and Context Precision via Gemini 2.0 Flash). |
+| **`zod`** | `^3.23.8` | **Schema Validation & Tool Parameters**: Validates MCP tool parameter schemas, ensuring type-safe tool inputs and schema reflection across the Model Context Protocol boundary. |
+| **`vitest`** | `^2.1.9` (dev) | **Unit Testing & RAG / Agent Benchmark Harness**: Fast TypeScript test runner executing deterministic unit suites across domain services, PII gateways, LangGraph workflows, and MCP client/server boundaries. |
+
 
