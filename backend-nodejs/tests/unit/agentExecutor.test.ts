@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Types } from 'mongoose';
 import { agentExecutor } from '../../src/modules/agent/services/agentExecutor';
 import { AgentRunRequestDto } from '../../src/modules/agent/dto/agentDto';
+import { AgentMode, AgentStatus } from '../../src/modules/agent/enums/agentEnums';
 import { Client } from '../../src/modules/customer/models/Client';
 import { ClientProfile } from '../../src/modules/customer/models/ClientProfile';
 import { RiskAssessment } from '../../src/modules/riskappetite/models/RiskAssessment';
@@ -126,13 +127,13 @@ describe('AgentExecutor Unit Tests', () => {
       portfolioReviewId,
       flowType: 'REPLACE_FUNDS',
       userGoal: 'Rebalance portfolio to exit underperforming holdings and allocate into suitable schemes',
-      agentMode: 'vanilla',
+      agentMode: AgentMode.VANILLA,
     };
 
     const response = await agentExecutor.runAgent(request);
 
-    expect(response.status).toBe('SUCCESS');
-    expect(response.agentMode).toBe('vanilla');
+    expect(response.status).toBe(AgentStatus.SUCCESS);
+    expect(response.agentMode).toBe(AgentMode.VANILLA);
     expect(response.totalSteps).toBe(5);
     expect(response.traces.length).toBe(5);
     expect(response.toolCalls).toBe(5);
@@ -232,7 +233,7 @@ describe('AgentExecutor Unit Tests', () => {
 
     const response = await agentExecutor.runAgent(request);
 
-    expect(response.status).toBe('SUCCESS');
+    expect(response.status).toBe(AgentStatus.SUCCESS);
     expect(response.traces.length).toBe(2);
     expect(response.recommendationDraft).toBeDefined();
     expect(response.recommendationDraft?.totalInvestable).toBe(60000);
