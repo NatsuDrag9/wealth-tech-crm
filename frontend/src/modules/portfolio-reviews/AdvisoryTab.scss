@@ -9,6 +9,21 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: $spacing-4;
+    flex-wrap: wrap;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: $spacing-3;
+    flex-wrap: wrap;
+  }
+
+  &__agent-controls {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
   }
 
   &__heading {

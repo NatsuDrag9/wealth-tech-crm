@@ -1,6 +1,7 @@
 import {
   useState,
   useMemo,
+  useEffect,
   type ReactElement,
 } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   Trash2,
   CheckCircle2,
   Sparkles,
+  Bot,
 } from 'lucide-react';
 import { Drawer } from '@/modules/user-manager/Drawer/Drawer';
 import { SingleSelectGenericDropdown } from '@/components/dropdowns';
@@ -18,26 +20,11 @@ import {
   useCreateRecommendationMutation,
 } from '@/services/api/portfolioApi';
 import type {
-  PortfolioReview,
   RecommendationFlowType,
 } from '@/definitions/portfolioTypes';
 import type { DropdownType } from '@/types/genericTypes';
+import type { ProposalDrawerProps, AllocationRow } from './types';
 import './ProposalDrawer.scss';
-
-interface ProposalDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  clientId: string;
-  latestReview?: PortfolioReview | null;
-  onSuccess: () => void;
-}
-
-interface AllocationRow {
-  id: string;
-  eligibleFundId: string;
-  amount: number;
-  replacesEntryId?: string;
-}
 
 export function ProposalDrawer({
   isOpen,
@@ -45,11 +32,49 @@ export function ProposalDrawer({
   clientId,
   latestReview,
   onSuccess,
+  stagedRecommendation,
+  recommendationDraft,
 }: ProposalDrawerProps): ReactElement {
   const [flowType, setFlowType] = useState<RecommendationFlowType>('REPLACE_FUNDS');
   const [allocations, setAllocations] = useState<AllocationRow[]>([
     { id: '1', eligibleFundId: '', amount: 100000 },
   ]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (stagedRecommendation?.funds && stagedRecommendation.funds.length > 0) {
+      if (stagedRecommendation.flowType) {
+        setFlowType(stagedRecommendation.flowType);
+      }
+      const mappedRows: AllocationRow[] = stagedRecommendation.funds.map((f, idx) => ({
+        id: String(f.id ?? idx + 1),
+        eligibleFundId: String(f.eligibleFund?.id ?? ''),
+        amount: Number(f.amount ?? 0),
+        replacesEntryId: f.replacesEntryId ? String(f.replacesEntryId) : undefined,
+      }));
+      setAllocations(mappedRows);
+    } else if (
+      recommendationDraft?.allocations
+      && recommendationDraft.allocations.length > 0
+    ) {
+      if (
+        recommendationDraft.flowType === 'FRESH_INVESTMENT'
+        || recommendationDraft.flowType === 'NEW_PORTFOLIO'
+      ) {
+        setFlowType('NEW_PORTFOLIO');
+      } else {
+        setFlowType('REPLACE_FUNDS');
+      }
+      const mappedRows: AllocationRow[] = recommendationDraft.allocations.map((a, idx) => ({
+        id: String(idx + 1),
+        eligibleFundId: String(a.eligibleFundId ?? ''),
+        amount: Number(a.amount ?? 0),
+        replacesEntryId: a.replacesEntryId ? String(a.replacesEntryId) : undefined,
+      }));
+      setAllocations(mappedRows);
+    }
+  }, [stagedRecommendation, recommendationDraft, isOpen]);
 
   const { data: eligibleFunds = [], isLoading: isLoadingFunds } = useGetEligibleFundsQuery();
   const [createRecommendation, { isLoading: isSubmitting }] = useCreateRecommendationMutation();
@@ -139,6 +164,16 @@ export function ProposalDrawer({
       width="wide"
     >
       <div className="proposal-drawer">
+        {stagedRecommendation || recommendationDraft ? (
+          <div className="proposal-drawer__ai-notice">
+            <Bot size={16} />
+            <span>
+              Autonomous Advisory Agent has staged optimal fund allocations.
+              Review and adjust before submitting.
+            </span>
+          </div>
+        ) : null}
+
         {/* Strategy Flow Selection */}
         <section className="proposal-drawer__section">
           <h3 className="proposal-drawer__section-title">

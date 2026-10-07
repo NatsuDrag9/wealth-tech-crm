@@ -3,23 +3,24 @@ import {
   useMemo,
   type ReactElement,
 } from 'react';
-import { FilePlus, Compass } from 'lucide-react';
+import { FilePlus, Compass, Bot } from 'lucide-react';
 import { StandardTable } from '@/components/tables';
 import { MainButton } from '@/components/buttons';
 import { useGetRecommendationsByClientQuery } from '@/services/api/portfolioApi';
-import type {
-  PortfolioRecommendation,
-  PortfolioReview,
-} from '@/definitions/portfolioTypes';
+import { useRunAgentMutation } from '@/services/api/agentApi';
+import {
+  getActiveAgentMode,
+  setActiveAgentMode,
+  type AgentMode,
+} from '@/config/agentConfig';
+import type { PortfolioRecommendation } from '@/definitions/portfolioTypes';
+import type { AgentExecutionResult } from '@/definitions/agentTypes';
 import { createProposalColumns } from './proposalColumns';
 import { ProposalDrawer } from './ProposalDrawer';
 import { ProposalDetailDrawer } from './ProposalDetailDrawer';
+import { AgentModeDropdown } from './agent/AgentModeDropdown';
+import type { AdvisoryTabProps } from './types';
 import './AdvisoryTab.scss';
-
-interface AdvisoryTabProps {
-  clientId: string;
-  latestReview?: PortfolioReview | null;
-}
 
 export function AdvisoryTab({
   clientId,
@@ -27,6 +28,10 @@ export function AdvisoryTab({
 }: AdvisoryTabProps): ReactElement {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<PortfolioRecommendation | null>(null);
+  const [agentMode, setAgentMode] = useState<AgentMode>(() => getActiveAgentMode());
+  const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
+
+  const [runAgent, { isLoading: isRunningAgent }] = useRunAgentMutation();
 
   const {
     data: proposals = [],
@@ -43,6 +48,28 @@ export function AdvisoryTab({
 
   const hasProposals = proposals.length > 0;
 
+  async function handlePerformWithAi() {
+    try {
+      const reviewId = latestReview?.id ? String(latestReview.id) : null;
+      const result = await runAgent({
+        clientId,
+        portfolioReviewId: reviewId,
+        flowType: 'REPLACE_FUNDS',
+        agentMode,
+      }).unwrap();
+
+      setAgentResult(result);
+      setIsCreateOpen(true);
+    } catch {
+      // Handled by RTK Query
+    }
+  }
+
+  function handleModeChange(mode: AgentMode) {
+    setAgentMode(mode);
+    setActiveAgentMode(mode);
+  }
+
   return (
     <div className="advisory-tab">
       {/* Action Toolbar */}
@@ -54,14 +81,39 @@ export function AdvisoryTab({
           </p>
         </div>
 
-        <MainButton
-          label="New Recommendation"
-          variant="primary"
-          size="md"
-          icon={<FilePlus size={16} />}
-          iconPosition="left"
-          onClick={() => setIsCreateOpen(true)}
-        />
+        <div className="advisory-tab__actions">
+          <div className="advisory-tab__agent-controls">
+            <AgentModeDropdown
+              value={agentMode}
+              onChange={handleModeChange}
+              disabled={isRunningAgent}
+              compact
+            />
+
+            <MainButton
+              label={isRunningAgent ? 'Executing AI...' : 'Perform with AI'}
+              variant="secondary"
+              size="md"
+              icon={<Bot size={16} />}
+              iconPosition="left"
+              onClick={handlePerformWithAi}
+              disabled={isRunningAgent}
+              isLoading={isRunningAgent}
+            />
+          </div>
+
+          <MainButton
+            label="New Recommendation"
+            variant="primary"
+            size="md"
+            icon={<FilePlus size={16} />}
+            iconPosition="left"
+            onClick={() => {
+              setAgentResult(null);
+              setIsCreateOpen(true);
+            }}
+          />
+        </div>
       </div>
 
       {/* Proposals List or Empty State */}
@@ -103,10 +155,15 @@ export function AdvisoryTab({
       {/* Slide-over Drawers */}
       <ProposalDrawer
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setAgentResult(null);
+        }}
         clientId={clientId}
         latestReview={latestReview}
         onSuccess={() => refetch()}
+        stagedRecommendation={agentResult?.stagedRecommendation}
+        recommendationDraft={agentResult?.recommendationDraft}
       />
 
       <ProposalDetailDrawer
