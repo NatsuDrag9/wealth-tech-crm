@@ -61,6 +61,8 @@ flowchart LR
         REC["PortfolioRecommendationController"]
         MFC["AdminMasterFundController"]
         RC["RiskAssessmentController"]
+        RQC["RagQueryController"]
+        AGC["AgentController"]
     end
 
     subgraph Services["Domain Services & Processing Engines"]
@@ -72,6 +74,12 @@ flowchart LR
         MFS["MasterFundService"]
         POI["EligibleFundExcelService (Apache POI)"]
         RS["RaService"]
+        RGS["RagSynthesisService (History + Cascading)"]
+        GGS["GeminiGenerationService"]
+        AGR["AgentExecutionStrategyResolver"]
+        VES["VanillaAgentExecutor"]
+        FES["SpringAiChatClientExecutor"]
+        MES["McpAgentExecutor + McpClient & McpServer"]
     end
 
     AC --> AS
@@ -83,6 +91,15 @@ flowchart LR
     MFC --> MFS
     MFS --> POI
     RC --> RS
+    RQC --> RGS
+    RGS --> GGS
+    AGC --> AGR
+    AGR -->|VANILLA| VES
+    AGR -->|FRAMEWORK| FES
+    AGR -->|MCP| MES
+    VES --> GGS
+    FES --> GGS
+    MES --> GGS
 ```
 
 #### 1.4 Subsystem C: Persistence, AWS S3 & Physical Storage Tier
@@ -96,6 +113,7 @@ flowchart LR
         PDF["PortfolioPdfGeneratorService"]
         MFS["MasterFundService"]
         RAG["RagRetrievalService (Candidate Constrained)"]
+        RGS["RagSynthesisService (Sliding Window Memory)"]
     end
 
     subgraph Repos["Spring Data JPA Repositories"]
@@ -104,6 +122,7 @@ flowchart LR
         RR["PortfolioRecommendationRepo / FundItemRepo"]
         EFR["EligibleFundRepository"]
         FDER["FundDocumentEmbeddingRepository"]
+        RCTR["RagConversationTurnRepository"]
         UR["UserRepository / RoleRepo / GroupRepo"]
     end
 
@@ -113,7 +132,7 @@ flowchart LR
     end
 
     subgraph Storage["Physical Storage"]
-        Postgres[("PostgreSQL Database<br/>(Relational Records, GIN Lexical + pgvector HNSW Store)")]
+        Postgres[("PostgreSQL Database<br/>(Relational Records, rag_conversation_turns, GIN Lexical + pgvector HNSW Store)")]
         S3Bucket[("AWS S3 / LocalStack Bucket<br/>(PDFs, Statements, Excel Files)")]
     end
 
@@ -128,6 +147,7 @@ flowchart LR
     MFS --> S3S
     RAG --> EFR
     RAG --> FDER
+    RGS --> RCTR
     S3S --> Presigner
 
     CR -->|"Hibernate / JDBC"| Postgres
@@ -135,6 +155,7 @@ flowchart LR
     RR -->|"Hibernate / JDBC"| Postgres
     EFR -->|"Hibernate / JDBC"| Postgres
     FDER -->|"B-Tree Filter + HNSW Cosine + GIN Lexical"| Postgres
+    RCTR -->|"Hibernate / JDBC (Window Buffer Turns)"| Postgres
     UR -->|"Hibernate / JDBC"| Postgres
     S3S -->|"PutObject / GetObject HTTP"| S3Bucket
 ```
@@ -529,11 +550,140 @@ classDiagram
         +Boolean isActive
     }
 
+    class RagConversationTurn {
+        +Long id
+        +String conversationId
+        +Integer turnIndex
+        +String userQuery
+        +String synthesizedAnswer
+        +Boolean isGrounded
+        +Long clientId
+        +LocalDateTime createdAt
+    }
+
+    class RagConversationTurnRepository {
+        <<interface>>
+        +findByConversationIdOrderByTurnIndexAsc(conversationId) List~RagConversationTurn~
+        +findMaxTurnIndexByConversationId(conversationId) Integer
+        +deleteByConversationId(conversationId) void
+    }
+
     FundDocumentEmbeddingRepository ..> FundDocumentEmbedding : manages
     FundDocumentEmbeddingRepository ..> FundDocumentEvidenceProjection : returns top-k
     FundDocumentEmbedding --> DocumentType : documentType
     FundDocumentEmbedding --> ScoreCategory : category
     FundDocumentEmbedding "*" --> "1" EligibleFund : bounded by candidate isin
+    RagConversationTurnRepository ..> RagConversationTurn : manages
+```
+
+#### 2.6 AI Agentic Architecture & Tri-Mode Strategy Engine
+Models the pluggable Strategy Pattern, executors, tool registries, and Model Context Protocol (MCP) contracts powering the agentic copilot.
+
+```mermaid
+classDiagram
+    class AgentMode {
+        <<enumeration>>
+        VANILLA
+        FRAMEWORK
+        MCP
+    }
+
+    class AgentExecutionStrategy {
+        <<interface>>
+        +execute(request) AgentExecutionResult
+        +getSupportedMode() AgentMode
+    }
+
+    class VanillaJavaAgentStrategy {
+        +execute(request) AgentExecutionResult
+        +getSupportedMode() AgentMode
+    }
+
+    class SpringAiAgentStrategy {
+        +execute(request) AgentExecutionResult
+        +getSupportedMode() AgentMode
+    }
+
+    class McpJavaAgentStrategy {
+        +execute(request) AgentExecutionResult
+        +getSupportedMode() AgentMode
+    }
+
+    class AgentExecutionStrategyResolver {
+        -Map~AgentMode, AgentExecutionStrategy~ strategyMap
+        +resolve(mode) AgentExecutionStrategy
+    }
+
+    class VanillaAgentExecutor {
+        -AgentToolRegistry toolRegistry
+        -GeminiGenerationService geminiService
+        -PiiProtectionGateway piiGateway
+        +execute(request) AgentExecutionResult
+    }
+
+    class SpringAiChatClientExecutor {
+        -FrameworkToolRegistry frameworkToolRegistry
+        -GeminiGenerationService geminiService
+        -PiiProtectionGateway piiGateway
+        +execute(request) AgentExecutionResult
+    }
+
+    class McpAgentExecutor {
+        -McpClient mcpClient
+        -GeminiGenerationService geminiService
+        -PiiProtectionGateway piiGateway
+        +execute(request) AgentExecutionResult
+    }
+
+    class AgentTool {
+        <<interface>>
+        +name() String
+        +description() String
+        +inputSchema() Map
+        +execute(args) AgentToolResult
+    }
+
+    class AgentToolRegistry {
+        -Map~String, AgentTool~ tools
+        +register(tool) void
+        +execute(toolName, args) AgentToolResult
+        +getGeminiFunctionDeclarations() List~Map~
+    }
+
+    class FrameworkToolRegistry {
+        -Map~String, ToolCallback~ toolCallbacks
+        +register(name, description, schema, callback) void
+        +getTool(name) ToolCallback
+        +getAllTools() Map
+    }
+
+    class McpServer {
+        -FrameworkToolRegistry toolRegistry
+        +handleRequest(request) McpResponse
+        +listTools() McpListToolsResult
+    }
+
+    class McpClient {
+        -McpServer localServer
+        +listTools() List~McpToolDefinition~
+        +callTool(name, arguments) McpCallToolResult
+    }
+
+    AgentExecutionStrategy <|.. VanillaJavaAgentStrategy : implements
+    AgentExecutionStrategy <|.. SpringAiAgentStrategy : implements
+    AgentExecutionStrategy <|.. McpJavaAgentStrategy : implements
+
+    AgentExecutionStrategyResolver --> AgentExecutionStrategy : resolves
+    VanillaJavaAgentStrategy --> VanillaAgentExecutor : delegates
+    SpringAiAgentStrategy --> SpringAiChatClientExecutor : delegates
+    McpJavaAgentStrategy --> McpAgentExecutor : delegates
+
+    VanillaAgentExecutor --> AgentToolRegistry : invokes
+    SpringAiChatClientExecutor --> FrameworkToolRegistry : invokes
+    McpAgentExecutor --> McpClient : invokes
+    McpClient --> McpServer : JSON-RPC 2.0
+    McpServer --> FrameworkToolRegistry : invokes
+    AgentToolRegistry "1" --> "*" AgentTool : manages
 ```
 
 ---
@@ -832,70 +982,224 @@ sequenceDiagram
     deactivate Ctrl
 ```
 
-#### 3.5 AI-Native Grounded RAG Retrieval Pipeline (Candidate-Constrained Hybrid Search)
-Illustrates end-to-end question processing, candidate whitelist extraction from relational storage, PostgreSQL tri-factor hybrid search, evidence quality validation, and grounded LLM synthesis.
+#### 3.5 AI-Native Grounded RAG Retrieval Pipeline (Candidate-Constrained Hybrid Search, Dialogue Memory & Model Cascading)
+Illustrates end-to-end question processing, conversational memory lookup (Approach A: Window Buffer), candidate whitelist extraction from relational storage, PostgreSQL tri-factor hybrid search, evidence quality validation, model cascading with exponential backoff on Gemini API, and conversation turn persistence.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor RM as Relationship Manager / Agent Copilot
-    participant Agent as Research / Rebalancing Agent
+    participant Ctrl as RagQueryController
+    participant Synth as RagSynthesisService
+    participant TurnRepo as RagConversationTurnRepository
     participant EFRepo as EligibleFundRepository
     participant RAGRepo as FundDocumentEmbeddingRepository
     participant DB as PostgreSQL (pgvector + GIN + B-Tree)
     participant Gate as Evidence Quality Gate
-    participant LLM as Grounded LLM Synthesizer
+    participant LLM as GeminiGenerationService
+    participant GeminiAPI as Google Gemini API (Model Cascade)
 
-    RM->>Agent: Query (e.g. "Compare expense ratio and risk for active Flexi Cap funds")
-    activate Agent
+    RM->>Ctrl: POST /java-wtc-api/v1/rag/query (query, conversationId?, clientId?)
+    activate Ctrl
+    Ctrl->>Synth: queryAndSynthesize(RagQueryRequest)
+    activate Synth
+
+    opt Conversation ID Provided (Dialogue Memory - Approach A)
+        Synth->>TurnRepo: findByConversationIdOrderByTurnIndexAsc(conversationId)
+        activate TurnRepo
+        TurnRepo->>DB: SELECT * FROM rag_conversation_turns WHERE conversation_id = ? ORDER BY turn_index ASC
+        DB-->>TurnRepo: Prior dialogue turns
+        TurnRepo-->>Synth: List~RagConversationTurn~ (Last 3 turns window)
+        deactivate TurnRepo
+    end
 
     rect rgb(240, 248, 255)
-    Note over Agent,EFRepo: Step 1: Deterministic Candidate Whitelisting
-    Agent->>EFRepo: findByScoreCategoryAndIsActiveTrue(MODERATE)
+    Note over Synth,EFRepo: Step 1: Deterministic Candidate Whitelisting
+    Synth->>EFRepo: findByScoreCategoryAndIsActiveTrue(MODERATE)
     activate EFRepo
     EFRepo->>DB: SELECT * FROM eligible_funds WHERE score_category = 'MODERATE' AND active = true
     DB-->>EFRepo: List of approved EligibleFund entities
-    EFRepo-->>Agent: candidateIsins = ["INF843801019", "INF209K01165", ...]
+    EFRepo-->>Synth: candidateIsins = ["INF843801019", "INF209K01165", ...]
     deactivate EFRepo
     end
 
     rect rgb(255, 250, 240)
-    Note over Agent,RAGRepo: Step 2: PostgreSQL Tri-Factor Hybrid Retrieval
-    Agent->>RAGRepo: findTopKRelevantEvidence(candidateIsins, queryEmbedding, queryText, limit=5)
+    Note over Synth,RAGRepo: Step 2: PostgreSQL Tri-Factor Hybrid Retrieval
+    Synth->>RAGRepo: findTopKRelevantEvidence(candidateIsins, queryEmbedding, queryText, limit=5)
     activate RAGRepo
     RAGRepo->>DB: SELECT ... WHERE isin IN (:candidateIsins) ORDER BY (0.7*semantic + 0.3*lexical) DESC LIMIT 5
     activate DB
     Note over DB: 1. B-Tree filters candidate ISINs<br/>2. HNSW evaluates cosine distance (1 - <=> embedding)<br/>3. GIN evaluates ts_rank_cd(tsvector, tsquery)<br/>4. Fused ranking bounded by LIMIT 5
     DB-->>RAGRepo: Top-5 FundDocumentEvidenceProjection records
     deactivate DB
-    RAGRepo-->>Agent: List~FundDocumentEvidenceProjection~
+    RAGRepo-->>Synth: List~FundDocumentEvidenceProjection~
     deactivate RAGRepo
     end
 
     rect rgb(245, 255, 245)
-    Note over Agent,Gate: Step 3: Post-Retrieval Validation (Evidence Quality Gate)
-    Agent->>Gate: validateEvidence(chunks, candidateIsins, threshold=0.75)
+    Note over Synth,Gate: Step 3: Post-Retrieval Validation (Evidence Quality Gate)
+    Synth->>Gate: validateEvidence(chunks, candidateIsins, threshold=0.75)
     activate Gate
     Note over Gate: Calculates rag_similarity_score & evidence_consistency_score
     alt Scores >= Threshold (PASS)
-        Gate-->>Agent: Evidence Validated (Context Approved)
+        Gate-->>Synth: Evidence Validated (Context Approved)
     else Scores < Threshold (FAIL)
-        Gate-->>Agent: Quality Check Failed (Query Reformulation Triggered)
+        Gate-->>Synth: Quality Check Failed (Query Reformulation Triggered)
     end
     deactivate Gate
     end
 
     rect rgb(250, 240, 255)
-    Note over Agent,LLM: Step 4: Grounded Synthesis with Citations
-    Agent->>LLM: synthesizeAnswer(userQuery, verifiedContext)
+    Note over Synth,LLM: Step 4: Grounded Synthesis with Citations & Model Cascade
+    Note over Synth: Assemble Grounded Prompt: System Guardrails + Prior Turns History + Authentic [Source N] Chunks
+    Synth->>LLM: generateGroundedResponse(systemInstruction, userPrompt, temp=0.1)
     activate LLM
-    Note over LLM: Restricts generation strictly to retrieved factsheet/SID facts
-    LLM-->>Agent: Grounded response with document name, date & page citations
+
+    alt Primary Model Invocation (gemini-3.8-flash)
+        LLM->>GeminiAPI: POST /gemini-3.8-flash:generateContent
+        activate GeminiAPI
+        alt HTTP 200 OK
+            GeminiAPI-->>LLM: Synthesized text with [Source N] citations
+        else HTTP 429 Quota Exhausted (Immediate Cascade)
+            Note over LLM: Retries on same model blocked; cascade to Secondary model
+            LLM->>GeminiAPI: POST /gemini-3.5-flash:generateContent
+            alt HTTP 200 OK
+                GeminiAPI-->>LLM: Synthesized text
+            else HTTP 429 / 5xx Persists
+                LLM->>GeminiAPI: POST /gemini-flash-latest:generateContent
+                GeminiAPI-->>LLM: Synthesized text or Quota Exhausted
+            end
+        else HTTP 503 Transient Server Spike
+            Note over LLM: Exponential backoff + randomized jitter on same model (up to 5 retries)
+            LLM->>GeminiAPI: Retry attempt on gemini-3.8-flash
+            GeminiAPI-->>LLM: HTTP 200 OK
+        end
+        deactivate GeminiAPI
+    end
+
+    alt All Cascade Models Exhausted (Honest Sentinel Degradation)
+        LLM-->>Synth: [SYNTHESIS_UNAVAILABLE: ...]
+        Note over Synth: Sentinel Detected: set isGrounded = false, return authentic evidence chunks without hallucinated text
+    else Synthesis Successful
+        LLM-->>Synth: Grounded response with document name, date & page citations
+    end
     deactivate LLM
     end
 
-    Agent-->>RM: Verified, cited answer ready for client presentation
-    deactivate Agent
+    opt Persist Turn to Dialogue Memory (If synthesis available)
+        Synth->>TurnRepo: save(RagConversationTurn)
+        activate TurnRepo
+        TurnRepo->>DB: INSERT INTO rag_conversation_turns (conversation_id, turn_index, user_query, synthesized_answer, is_grounded, ...)
+        deactivate TurnRepo
+    end
+
+    Synth-->>Ctrl: RagQueryResponse (answer, citations, evidenceChunks, conversationId, turnIndex)
+    deactivate Synth
+    Ctrl-->>RM: Verified, cited answer ready for client presentation (HTTP 200 OK)
+    deactivate Ctrl
+```
+
+#### 3.6 AI Agentic Copilot Execution Flow (Tri-Mode Strategy: Vanilla, Framework & MCP)
+Illustrates request dispatch via `AgentExecutionStrategyResolver`, PII tokenization boundaries, dynamic tool discovery and execution across the three modes, and recommendation draft staging.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Advisor as Relationship Manager / Advisor
+    participant Ctrl as AgentController
+    participant Resolver as AgentExecutionStrategyResolver
+    participant Strategy as AgentExecutionStrategy
+    participant PII as PiiProtectionGateway
+    participant Executor as AgentExecutor (Vanilla / SpringAI / MCP)
+    participant Model as GeminiGenerationService
+    participant Tools as Tool Execution Boundary<br/>(AgentToolRegistry / FrameworkToolRegistry / MCP Server)
+    participant ProposalRepo as PortfolioRecommendationRepository
+
+    Advisor->>Ctrl: POST /java-wtc-api/v1/agent/run<br/>{clientId, mode: "VANILLA"|"FRAMEWORK"|"MCP", userGoal, flowType}
+    activate Ctrl
+    Ctrl->>Resolver: resolve(request.agentMode)
+    activate Resolver
+    Resolver-->>Ctrl: Selected AgentExecutionStrategy implementation
+    deactivate Resolver
+
+    Ctrl->>Strategy: execute(AgentRunRequest)
+    activate Strategy
+    Strategy->>Executor: execute(AgentRunRequest)
+    activate Executor
+
+    rect rgb(240, 248, 255)
+    Note over Executor,PII: Step 1: Client Context Fetch & PII Redaction
+    Executor->>PII: tokenize(userGoal, client, profile)
+    activate PII
+    Note over PII: Replaces Name, PAN, Phone, Email with {{CLIENT_NAME_1}}, etc.
+    PII-->>Executor: PiiTokenizationResult (sanitizedPrompt, tokenMap)
+    deactivate PII
+    end
+
+    rect rgb(255, 250, 240)
+    Note over Executor,Tools: Step 2: Tool Declaration / Discovery
+    alt Mode == VANILLA
+        Executor->>Tools: AgentToolRegistry.getGeminiFunctionDeclarations()
+        Tools-->>Executor: Function declarations (6 tools)
+    else Mode == FRAMEWORK
+        Executor->>Tools: FrameworkToolRegistry.getAllTools() (@Tool callbacks)
+        Tools-->>Executor: ToolCallback declarations (6 tools)
+    else Mode == MCP
+        Executor->>Tools: McpClient.listTools() via JSON-RPC "tools/list"
+        Tools-->>Executor: McpListToolsResult (6 tools schemas)
+    end
+    end
+
+    rect rgb(245, 255, 245)
+    Note over Executor,Model: Step 3: Turn-Bounded ReAct Loop (Max 8 Steps)
+    loop ReAct Turn Loop (until final text or max 8 steps)
+        Executor->>Model: generateWithTools(systemPrompt, conversationHistory, toolDeclarations)
+        activate Model
+        alt Model Returns Tool Call
+            Model-->>Executor: ToolCall(name, arguments)
+            deactivate Model
+
+            alt Mode == VANILLA
+                Executor->>Tools: AgentToolRegistry.execute(toolName, args)
+            else Mode == FRAMEWORK
+                Executor->>Tools: FrameworkToolRegistry.getTool(toolName).call(args)
+            else Mode == MCP
+                Executor->>Tools: McpClient.callTool(name, args) via JSON-RPC "tools/call"
+            end
+            activate Tools
+            opt Tool is stage_recommendation_proposal
+                Tools->>ProposalRepo: save(PortfolioRecommendation entity)
+            end
+            Tools-->>Executor: Raw tool execution result
+            deactivate Tools
+
+            Executor->>PII: tokenize(toolResult)
+            activate PII
+            PII-->>Executor: Sanitized observation
+            deactivate PII
+            Note over Executor: Append functionResponse to conversation turns<br/>Record AgentStepRecord (action, latency, sanitized output)
+        else Model Returns Final Text
+            activate Model
+            Model-->>Executor: Final advisory rationale text
+            deactivate Model
+            Note over Executor: Break turn loop
+        end
+    end
+    end
+
+    rect rgb(250, 240, 255)
+    Note over Executor,PII: Step 4: PII Rehydration & Telemetry Assembly
+    Executor->>PII: rehydrate(finalText, tokenMap)
+    activate PII
+    PII-->>Executor: Authentic text with real client names restored
+    deactivate PII
+    Executor-->>Strategy: AgentExecutionResult (status, finalText, steps, stagedProposal, latency)
+    deactivate Executor
+    Strategy-->>Ctrl: AgentExecutionResult
+    deactivate Strategy
+    Ctrl-->>Advisor: HTTP 200 OK (AgentExecutionResult)
+    deactivate Ctrl
+    end
 ```
 
 ---

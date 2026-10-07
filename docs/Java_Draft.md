@@ -503,3 +503,143 @@ If the system handles **10,000 requests per second**:
   - **Multi-server ready:** Any server with the secret key can decrypt the tag without needing to share session data.
   - **Trade-off:** Uses a small amount of extra CPU to encrypt and decrypt values. This is the industry standard approach when high traffic and crypto resources are available.
 
+---
+
+#### 8. AI Agentic Architecture & Tri-Mode Evolution (Vanilla ReAct, Spring AI Framework, and Model Context Protocol MCP)
+
+##### 8.1 Evolutionary Motivation & The Tri-Mode Strategy Pattern
+In enterprise wealth management, autonomous AI agents cannot operate as opaque, monolithic black boxes. Regulatory compliance, auditability, latency, and interoperability necessitate clear architectural evolution. The Java backend (`backend-java`) implements a pluggable **Strategy Pattern** via `AgentExecutionStrategyResolver`, dynamically routing execution according to the client-selected `AgentMode`:
+
+```
+               POST /java-wtc-api/v1/agent/run
+                             │
+              AgentExecutionStrategyResolver
+                             ├── [mode: VANILLA]   ──► VanillaJavaAgentStrategy (Step 1)
+                             ├── [mode: FRAMEWORK] ──► SpringAiAgentStrategy    (Step 2)
+                             └── [mode: MCP]       ──► McpJavaAgentStrategy     (Step 3)
+```
+
+1. **Step 1: Vanilla ReAct Loop (`VANILLA`)**:
+   - **Why build it first?** Zero external framework lock-in. Demystifies the underlying ReAct (Reasoning + Acting) execution cycle.
+   - Proves foundational correctness: explicit loop control, step budgets, function calling schema declarations, and tight PII tokenization boundaries.
+2. **Step 2: Spring AI Framework Abstraction (`FRAMEWORK`)**:
+   - **Why migrate to a framework?** Eliminates manual schema parsing boilerplate.
+   - Introduces declarative `@Tool` annotations, metadata reflection, dynamic parameter reflection/binding, and standardized `ToolCallback` abstractions modeled on the Spring AI ecosystem.
+3. **Step 3: Model Context Protocol (`MCP`) Standard (`MCP`)**:
+   - **Why adopt MCP?** Breaks process-level coupling. Tools become standardized, language-agnostic resources exposed over standard JSON-RPC 2.0 (`io.modelcontextprotocol.sdk:mcp`).
+   - The agent functions strictly as an **MCP Client**, discovering tools dynamically via `tools/list` and invoking them via `tools/call`. The CRM domain services become an **MCP Server**, ready to serve any MCP-compatible orchestrator (Claude Desktop, IDE extensions, or remote microservices).
+
+---
+
+##### 8.2 Common Agent Domain Capabilities & Tools
+Across all three execution strategies, the agent has access to 6 specialized, compliance-governed domain tools:
+
+| Tool Name | Class / Method | Description & Compliance Guardrail |
+|---|---|---|
+| `get_client_profile` | `ClientProfileTool` / `getClientProfile` | Fetches client metadata, KYC status, contact placeholders, and relationship manager details. |
+| `get_client_risk_assessment` | `RiskAssessmentTool` / `getClientRiskAssessment` | Retrieves assessed risk score, category (`ScoreCategory`), and suitability parameters (SEBI compliance gate). |
+| `get_portfolio_review` | `PortfolioReviewTool` / `getPortfolioReview` | Retrieves active holdings, asset allocation breakdown, and existing fund entries flagged for rebalancing (`HOLD` vs `SELL`). |
+| `get_eligible_funds` | `EligibleFundsTool` / `getEligibleFunds` | Fetches active approved mutual funds strictly filtered by the client's risk appetite band (`MODERATE`, `AGGRESSIVE`, etc.). |
+| `research_fund_rag` | `FundResearchRagTool` / `researchFund` | Queries PostgreSQL `fund_document_embeddings` via candidate-grounded hybrid search (semantic HNSW + lexical GIN) to extract verified factsheet/SID evidence. |
+| `stage_recommendation_proposal` | `StageRecommendationDraftTool` / `stageRecommendationProposal` | Creates and stages a compliant `PortfolioRecommendation` proposal entity with line items (`REPLACE_FUNDS` or `NEW_PORTFOLIO`). |
+
+---
+
+##### 8.3 Step 1 Deep Dive: Vanilla ReAct Agent Engine
+- **Engine**: `VanillaAgentExecutor.java`
+- **Tool Registry**: `AgentToolRegistry.java` (maintains map of `AgentTool` interfaces).
+- **Execution Lifecycle**:
+  1. **PII Sanitization**: Before calling the LLM, `PiiProtectionGateway.tokenize()` scans client records and redacts names, PAN, phone, and email into temporary tokens (`{{CLIENT_NAME_1}}`).
+  2. **Prompt Assembly**: Constructs system instructions enforcing wealth management compliance:
+     - Check client holdings $\to$ Check risk band $\to$ Filter eligible funds $\to$ Ground via RAG $\to$ Stage proposal.
+  3. **Turn-Bounded ReAct Loop**:
+     - Hard limit of `MAX_STEPS = 8` turns to prevent infinite execution loops or quota drain.
+     - Invokes `GeminiGenerationService.generateWithTools()` with raw Gemini `functionDeclarations`.
+  4. **Tool Call & Observation**:
+     - Detects `modelResponse.hasToolCalls()`.
+     - Extracts function name and arguments, dispatches to `AgentToolRegistry.execute(toolName, args)`.
+     - Passes raw tool observation through `PiiProtectionGateway.tokenize()` before appending to the conversation turn as a `functionResponse`.
+     - Records turn metadata in `AgentStepRecord` (action, tool name, input arguments, sanitized output, latency).
+  5. **Termination & Rehydration**:
+     - When the model produces a text response without tool calls, the loop terminates.
+     - Final response text is rehydrated via `PiiProtectionGateway.rehydrate(responseText, tokenMap)`.
+     - Returns structured `AgentExecutionResult` with final text, step records, staged recommendation response, total latency, and status (`SUCCESS` / `MAX_STEPS_EXCEEDED`).
+
+---
+
+##### 8.4 Step 2 Deep Dive: Spring AI Framework Strategy
+- **Engine**: `SpringAiChatClientExecutor.java`
+- **Tool Registry**: `FrameworkToolRegistry.java`
+- **Tool Declarations**: `PortfolioFrameworkTools.java`
+- **Architectural Enhancements**:
+  1. **Declarative Tooling**: Uses `@Tool(name = "...", description = "...")` annotations directly on service methods.
+  2. **ToolCallback Pattern**: Wraps method invocations in Spring AI-compatible `ToolCallback` instances containing name, description, and JSON schema definitions (`inputSchema`).
+  3. **Dynamic Reflection & Error Handling**:
+     - Automatic parameter type casting and schema generation.
+     - Tool execution errors are caught, wrapped in structured JSON error responses, and fed back into context without crashing the parent execution loop.
+  4. **Spring AI Conversation State**:
+     - Chat completion and tool execution are separated into clean abstraction boundaries, matching modern enterprise Spring AI patterns (`ChatClient`, `ChatModel`).
+
+---
+
+##### 8.5 Step 3 Deep Dive: Model Context Protocol (MCP) Standard
+- **Engine**: `McpAgentExecutor.java`
+- **Server**: `McpServer.java` (implements MCP specification with `io.modelcontextprotocol.sdk:mcp`)
+- **Client**: `McpClient.java` (standardized JSON-RPC 2.0 client)
+- **Protocol Schema**: `McpProtocol.java` (JSON-RPC 2.0 request/response structures)
+
+###### A. MCP Client-Server Interaction
+```
+   ┌──────────────────────────────────────────────────────────────┐
+   │ McpAgentExecutor (LLM Orchestrator / MCP Client)             │
+   └───────────────┬──────────────────────────────▲───────────────┘
+                   │                              │
+      1. tools/list (JSON-RPC)         3. tools/call (JSON-RPC)
+                   │                              │
+   ┌───────────────▼──────────────────────────────┴───────────────┐
+   │ McpServer (CRM Domain Capability Provider)                   │
+   │  - Handles tools/list: Returns JSON Schema definitions        │
+   │  - Handles tools/call: Dispatches to FrameworkToolRegistry   │
+   └──────────────────────────────────────────────────────────────┘
+```
+
+###### B. JSON-RPC 2.0 Wire Protocol
+1. **Tool Discovery (`tools/list`)**:
+   - **Request**: `{"jsonrpc": "2.0", "id": "list-1", "method": "tools/list", "params": {}}`
+   - **Response**: Returns list of tools with name, description, and JSON Schema for arguments (`inputSchema`).
+2. **Tool Execution (`tools/call`)**:
+   - **Request**:
+     ```json
+     {
+       "jsonrpc": "2.0",
+       "id": "call-1698000000",
+       "method": "tools/call",
+       "params": {
+         "name": "get_eligible_funds",
+         "arguments": { "category": "MODERATE" }
+       }
+     }
+     ```
+   - **Response**:
+     ```json
+     {
+       "jsonrpc": "2.0",
+       "id": "call-1698000000",
+       "result": {
+         "content": [
+           {
+             "type": "text",
+             "text": "[{\"isin\":\"INF843801019\",\"fundName\":\"HDFC Flexi Cap Fund\"}]"
+           }
+         ],
+         "isError": false
+       }
+     }
+     ```
+
+###### C. Key Architectural Benefits for Production & Interviews
+- **Decoupled Deployment**: The `McpServer` can run in a separate container or microservice and communicate with any remote MCP client over SSE (Server-Sent Events) or Stdio.
+- **Language Agnostic**: Python agents, Node.js agents, Claude Desktop, or Java agents can invoke the exact same CRM tool catalogue without code duplication.
+- **Protocol Compliance**: Leverages official `io.modelcontextprotocol.sdk:mcp` (v0.7.0) models for future standard compatibility.
+
+
