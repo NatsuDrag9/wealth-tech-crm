@@ -68,20 +68,26 @@ export class AgentExecutor {
       'Agent Executor loop completed'
     );
 
+    const message = isSuccess
+      ? 'Agent successfully formulated and staged recommendation draft proposal backed by grounded evidence.'
+      : 'Agent execution finished without completing a valid recommendation draft.';
+
     return {
       status,
+      success: isSuccess,
+      summary: stagedDraft?.executiveSummary || message,
       recommendationDraft: stagedDraft,
       traces,
+      toolSteps: traces,
       totalSteps: traces.length,
       totalDurationMs,
       llmCalls,
       toolCalls,
       agentMode: request.agentMode || AgentMode.VANILLA,
-      message: isSuccess
-        ? 'Agent successfully formulated and staged recommendation draft proposal backed by grounded evidence.'
-        : 'Agent execution finished without completing a valid recommendation draft.',
+      message,
     };
   }
+
 
   private async executeGeminiReActLoop(
     context: AgentContext,

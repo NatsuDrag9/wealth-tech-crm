@@ -62,20 +62,26 @@ export class McpAgentStrategy implements IAgentStrategy {
       'MCP Agent Strategy execution completed'
     );
 
+    const message = isSuccess
+      ? 'MCP Agent successfully formulated and staged recommendation draft proposal across MCP boundary.'
+      : 'MCP Agent execution finished without completing a valid recommendation draft.';
+
     return {
       status,
+      success: isSuccess,
+      summary: stagedDraft?.executiveSummary || message,
       recommendationDraft: stagedDraft,
       traces,
+      toolSteps: traces,
       totalSteps: traces.length,
       totalDurationMs,
       llmCalls,
       toolCalls,
       agentMode: this.mode,
-      message: isSuccess
-        ? 'MCP Agent successfully formulated and staged recommendation draft proposal across MCP boundary.'
-        : 'MCP Agent execution finished without completing a valid recommendation draft.',
+      message,
     };
   }
+
 
   private async executeGeminiMcpLoop(
     clientId: string,

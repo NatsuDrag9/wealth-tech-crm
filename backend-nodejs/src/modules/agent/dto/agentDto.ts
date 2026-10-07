@@ -41,8 +41,11 @@ export interface RecommendationDraftDto {
 
 export interface AgentRunResponseDto {
   status: AgentStatus;
+  success?: boolean;
+  summary?: string;
   recommendationDraft?: RecommendationDraftDto;
   traces: AgentStepTraceDto[];
+  toolSteps?: AgentStepTraceDto[];
   totalSteps: number;
   totalDurationMs: number;
   llmCalls: number;
@@ -50,3 +53,4 @@ export interface AgentRunResponseDto {
   agentMode: AgentMode;
   message: string;
 }
+

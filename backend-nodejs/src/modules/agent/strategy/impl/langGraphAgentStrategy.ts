@@ -142,20 +142,26 @@ export class LangGraphAgentStrategy implements IAgentStrategy {
       'LangGraph StateGraph agent workflow execution completed'
     );
 
+    const message = isSuccess
+      ? 'LangGraph agent successfully converged on compliant recommendation draft proposal.'
+      : 'LangGraph agent terminated without formulating a complete recommendation draft.';
+
     return {
       status,
+      success: isSuccess,
+      summary: finalState.recommendationDraft?.executiveSummary || message,
       recommendationDraft: finalState.recommendationDraft,
       traces: finalState.traces,
+      toolSteps: finalState.traces,
       totalSteps: finalState.traces.length,
       totalDurationMs,
       llmCalls: finalState.llmCalls,
       toolCalls: finalState.toolCalls,
       agentMode: this.mode,
-      message: isSuccess
-        ? 'LangGraph agent successfully converged on compliant recommendation draft proposal.'
-        : 'LangGraph agent terminated without formulating a complete recommendation draft.',
+      message,
     };
   }
+
 
   private buildStateGraph() {
     const workflow = new StateGraph(AgentGraphState)

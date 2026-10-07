@@ -157,7 +157,7 @@ router.post(
 );
 
 router.post(
-  '/portfolio-reviews/rag/query',
+  ['/portfolio-reviews/rag/query', '/rag/query'],
   requirePermission('portfolioreview:read'),
   ragController.queryAndSynthesize.bind(ragController)
 );
