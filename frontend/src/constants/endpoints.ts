@@ -54,4 +54,10 @@ export const ENDPOINTS = {
   PORTFOLIO_RECOMMENDATIONS: 'portfolio-recommendations',
   PORTFOLIO_RECOMMENDATION_DETAIL: (id: string | number) => `portfolio-recommendations/${id}`,
   PORTFOLIO_RECOMMENDATION_GENERATE_PDF: (id: string | number) => `portfolio-recommendations/${id}/generate-pdf`,
+
+  // Autonomous Advisory Agent
+  AGENT_RUN: 'agent/run',
+
+  // Grounded RAG Query
+  RAG_QUERY: 'portfolio-reviews/rag/query',
 } as const;

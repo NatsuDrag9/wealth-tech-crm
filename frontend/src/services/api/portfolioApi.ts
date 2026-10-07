@@ -27,7 +27,8 @@ function normalizeEligibleFund(f: any): EligibleFund {
 }
 
 /**
- * Normalizes a portfolio review holding entry and top metrics from either Node.js (camelCase) or Java (snake_case).
+ * Normalizes a portfolio review holding entry and top metrics from either
+ * Node.js (camelCase) or Java (snake_case).
  */
 function normalizePortfolioReview(raw: any): PortfolioReview {
   if (!raw) return raw;
@@ -63,7 +64,8 @@ function normalizePortfolioReview(raw: any): PortfolioReview {
 }
 
 /**
- * Normalizes a portfolio recommendation proposal from either Node.js (camelCase) or Java (snake_case).
+ * Normalizes a portfolio recommendation proposal from either Node.js (camelCase)
+ * or Java (snake_case).
  */
 function normalizeRecommendation(rec: any): PortfolioRecommendation {
   if (!rec) return rec;
@@ -153,7 +155,8 @@ export const portfolioApi = baseApi.injectEndpoints({
       query: (payload) => ({
         url: ENDPOINTS.PORTFOLIO_RECOMMENDATIONS,
         method: 'POST',
-        // Polyglot interoperability payload: emits both camelCase (Node.js) and snake_case (Java Spring Boot)
+        // Polyglot interoperability payload: emits both camelCase (Node.js)
+        // and snake_case (Java Spring Boot)
         body: {
           ...payload,
           client_id: payload.clientId,
