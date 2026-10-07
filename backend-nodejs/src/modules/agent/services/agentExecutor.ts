@@ -5,6 +5,7 @@ import { geminiGenerationService } from '../../../common/services/geminiGenerati
 import { piiProtectionGateway } from '../../../common/services/piiProtectionGateway';
 import { AgentContext } from '../tools/types';
 import { toolRegistry } from '../tools/toolRegistry';
+import { AgentMode, AgentStatus } from '../enums/agentEnums';
 import {
   AgentRunRequestDto,
   AgentRunResponseDto,
@@ -57,10 +58,10 @@ export class AgentExecutor {
 
     const isSuccess = !!stagedDraft && stagedDraft.allocations.length > 0;
     const status = isSuccess
-      ? 'SUCCESS'
+      ? AgentStatus.SUCCESS
       : traces.length >= AgentExecutor.MAX_STEPS
-      ? 'MAX_STEPS_EXCEEDED'
-      : 'FAILED';
+      ? AgentStatus.MAX_STEPS_EXCEEDED
+      : AgentStatus.FAILED;
 
     logger.info(
       { clientId, status, totalSteps: traces.length, totalDurationMs },
@@ -75,7 +76,7 @@ export class AgentExecutor {
       totalDurationMs,
       llmCalls,
       toolCalls,
-      agentMode: request.agentMode || 'vanilla',
+      agentMode: request.agentMode || AgentMode.VANILLA,
       message: isSuccess
         ? 'Agent successfully formulated and staged recommendation draft proposal backed by grounded evidence.'
         : 'Agent execution finished without completing a valid recommendation draft.',

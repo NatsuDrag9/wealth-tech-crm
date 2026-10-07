@@ -1,9 +1,11 @@
+import { AgentMode, AgentStatus } from '../enums/agentEnums';
+
 export interface AgentRunRequestDto {
   clientId: string;
   portfolioReviewId?: string | null;
   flowType?: 'REPLACE_FUNDS' | 'NEW_PORTFOLIO';
   userGoal?: string;
-  agentMode?: 'vanilla' | 'framework' | 'mcp';
+  agentMode?: AgentMode;
 }
 
 export interface AgentStepTraceDto {
@@ -38,13 +40,13 @@ export interface RecommendationDraftDto {
 }
 
 export interface AgentRunResponseDto {
-  status: 'SUCCESS' | 'FAILED' | 'MAX_STEPS_EXCEEDED';
+  status: AgentStatus;
   recommendationDraft?: RecommendationDraftDto;
   traces: AgentStepTraceDto[];
   totalSteps: number;
   totalDurationMs: number;
   llmCalls: number;
   toolCalls: number;
-  agentMode: 'vanilla' | 'framework' | 'mcp';
+  agentMode: AgentMode;
   message: string;
 }
