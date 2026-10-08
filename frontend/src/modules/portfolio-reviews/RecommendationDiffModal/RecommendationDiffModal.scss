@@ -1,0 +1,264 @@
+@use '@/styles/variables' as *;
+
+.recommendation-diff-modal {
+  position: fixed;
+  inset: 0;
+  background-color: rgb(0 0 0 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  padding: $spacing-4;
+
+  &__container {
+    background-color: $white;
+    border-radius: $border-radius-lg;
+    max-width: 96rem;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: $shadow-lg;
+    border: 1px solid $neutral-200;
+    overflow: hidden;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-4 $spacing-6;
+    background-color: $primary;
+    color: $white;
+  }
+
+  &__header-left {
+    display: flex;
+    align-items: center;
+    gap: $spacing-3;
+  }
+
+  &__title {
+    font-size: $font-size-lg;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  &__subtitle {
+    font-size: $font-size-xs;
+    color: $neutral-300;
+    margin: 0;
+  }
+
+  &__close-btn {
+    background: transparent;
+    border: none;
+    color: $white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: $spacing-1;
+    border-radius: $border-radius-sm;
+
+    &:hover {
+      background-color: $primary-hover;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: $spacing-6;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-6;
+    background-color: $neutral-50;
+  }
+
+  &__summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-4;
+    background-color: $white;
+    padding: $spacing-4;
+    border-radius: $border-radius-md;
+    border: 1px solid $neutral-200;
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-1;
+
+    &-label {
+      font-size: $font-size-xs;
+      color: $neutral-500;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    &-value {
+      font-size: $font-size-lg;
+      font-weight: 700;
+      color: $neutral-900;
+
+      &--sell {
+        color: $danger;
+      }
+
+      &--buy {
+        color: $success;
+      }
+    }
+  }
+
+  &__table-wrapper {
+    background-color: $white;
+    border-radius: $border-radius-md;
+    border: 1px solid $neutral-200;
+    overflow: hidden;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: $font-size-sm;
+
+    th {
+      background-color: $neutral-100;
+      color: $neutral-700;
+      padding: $spacing-3 $spacing-4;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 1px solid $neutral-200;
+    }
+
+    td {
+      padding: $spacing-3 $spacing-4;
+      border-bottom: 1px solid $neutral-200;
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+  }
+
+  &__fund-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__fund-name {
+    font-weight: 600;
+    color: $neutral-900;
+  }
+
+  &__fund-sub {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+  }
+
+  &__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem $spacing-1;
+    border-radius: $border-radius-sm;
+    font-size: $font-size-xs;
+    font-weight: 600;
+
+    &--sell {
+      background-color: $danger-light;
+      color: $danger;
+    }
+
+    &--buy {
+      background-color: $success-light;
+      color: $success;
+    }
+
+    &--fresh {
+      background-color: $info-light;
+      color: $info;
+    }
+  }
+
+  &__arrow-cell {
+    text-align: center;
+    color: $neutral-400;
+    width: 3rem;
+  }
+
+  &__amount {
+    font-weight: 600;
+
+    &--sell {
+      color: $danger;
+    }
+
+    &--buy {
+      color: $success;
+    }
+  }
+
+  &__review-section {
+    background-color: $white;
+    border: 1px solid $neutral-200;
+    border-radius: $border-radius-md;
+    padding: $spacing-5;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
+  }
+
+  &__review-title {
+    font-size: $font-size-sm;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $neutral-700;
+    margin: 0;
+  }
+
+  &__review-desc {
+    font-size: $font-size-xs;
+    color: $neutral-500;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  &__review-textarea {
+    width: 100%;
+    min-height: 7.2rem;
+    padding: $spacing-3;
+    border: 1px solid $neutral-300;
+    border-radius: $border-radius-md;
+    font-size: $font-size-sm;
+    font-family: inherit;
+    color: $neutral-900;
+    background-color: $white;
+    resize: vertical;
+    outline: none;
+
+    &:focus {
+      border-color: $primary;
+    }
+
+    &:disabled {
+      background-color: $neutral-100;
+    }
+  }
+
+  &__review-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: $spacing-3;
+  }
+}

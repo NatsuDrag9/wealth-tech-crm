@@ -58,10 +58,7 @@ export function ProposalDrawer({
       recommendationDraft?.allocations
       && recommendationDraft.allocations.length > 0
     ) {
-      if (
-        recommendationDraft.flowType === 'FRESH_INVESTMENT'
-        || recommendationDraft.flowType === 'NEW_PORTFOLIO'
-      ) {
+      if (recommendationDraft.flowType === 'NEW_PORTFOLIO') {
         setFlowType('NEW_PORTFOLIO');
       } else {
         setFlowType('REPLACE_FUNDS');

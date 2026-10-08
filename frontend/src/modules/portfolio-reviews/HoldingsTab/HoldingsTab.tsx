@@ -3,16 +3,10 @@ import { Briefcase, Sparkles } from 'lucide-react';
 import { StandardTable } from '@/components/tables';
 import { MainButton } from '@/components/buttons';
 import { useCreateSampleReviewMutation } from '@/services/api/portfolioApi';
-import type { PortfolioReview, PortfolioEntry } from '@/definitions/portfolioTypes';
+import type { PortfolioEntry } from '@/definitions/portfolioTypes';
 import { createHoldingsColumns } from './holdingsColumns';
+import type { HoldingsTabProps } from './types';
 import './HoldingsTab.scss';
-
-interface HoldingsTabProps {
-  review: PortfolioReview | null | undefined;
-  isLoading: boolean;
-  clientId: string;
-  onSampleCreated: () => void;
-}
 
 export function HoldingsTab({
   review,

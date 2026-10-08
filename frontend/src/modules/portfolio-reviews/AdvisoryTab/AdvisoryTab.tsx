@@ -15,10 +15,12 @@ import {
 } from '@/config/agentConfig';
 import type { PortfolioRecommendation } from '@/definitions/portfolioTypes';
 import type { AgentExecutionResult } from '@/definitions/agentTypes';
-import { createProposalColumns } from './proposalColumns';
-import { ProposalDrawer } from './ProposalDrawer';
-import { ProposalDetailDrawer } from './ProposalDetailDrawer';
-import { AgentModeDropdown } from './agent/AgentModeDropdown';
+import { createProposalColumns } from '../ProposalDetailDrawer/proposalColumns';
+import { ProposalDrawer } from '../ProposalDrawer/ProposalDrawer';
+import { ProposalDetailDrawer } from '../ProposalDetailDrawer/ProposalDetailDrawer';
+import { AgentModeDropdown } from '../AgentModeDropdown/AgentModeDropdown';
+import { useAppDispatch } from '@/store';
+import { setLatestAgentResult } from '@/store/slices/agentSlice';
 import type { AdvisoryTabProps } from './types';
 import './AdvisoryTab.scss';
 
@@ -26,6 +28,7 @@ export function AdvisoryTab({
   clientId,
   latestReview,
 }: AdvisoryTabProps): ReactElement {
+  const dispatch = useAppDispatch();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<PortfolioRecommendation | null>(null);
   const [agentMode, setAgentMode] = useState<AgentMode>(() => getActiveAgentMode());
@@ -59,6 +62,7 @@ export function AdvisoryTab({
       }).unwrap();
 
       setAgentResult(result);
+      dispatch(setLatestAgentResult(result));
       setIsCreateOpen(true);
     } catch {
       // Handled by RTK Query
@@ -170,6 +174,8 @@ export function AdvisoryTab({
         isOpen={Boolean(selectedProposal)}
         onClose={() => setSelectedProposal(null)}
         proposalId={selectedProposal?.id ?? null}
+        clientId={clientId}
+        latestReview={latestReview}
       />
     </div>
   );

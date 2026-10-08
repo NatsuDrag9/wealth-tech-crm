@@ -20,14 +20,3 @@ export interface ProposalDrawerProps {
   stagedRecommendation?: PortfolioRecommendation | null;
   recommendationDraft?: AgentRecommendationDraft | null;
 }
-
-export interface AdvisoryTabProps {
-  clientId: string;
-  latestReview?: PortfolioReview | null;
-}
-
-export interface ProposalDetailDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  proposalId: string | number | null;
-}

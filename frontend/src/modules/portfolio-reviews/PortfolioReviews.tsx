@@ -14,8 +14,8 @@ import { SingleSelectGenericDropdown } from '@/components/dropdowns';
 import { useGetClientsQuery } from '@/services/api/clientApi';
 import { useGetLatestReviewQuery } from '@/services/api/portfolioApi';
 import type { DropdownType } from '@/types/genericTypes';
-import { HoldingsTab } from './HoldingsTab';
-import { AdvisoryTab } from './AdvisoryTab';
+import { HoldingsTab } from './HoldingsTab/HoldingsTab';
+import { AdvisoryTab } from './AdvisoryTab/AdvisoryTab';
 import './PortfolioReviews.scss';
 
 type ActiveTab = 'holdings' | 'advisory';

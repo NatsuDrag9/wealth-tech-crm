@@ -8,6 +8,7 @@ import {
   Sparkles,
   Loader2,
   CheckCircle2,
+  Layers,
 } from 'lucide-react';
 import { Drawer } from '@/modules/user-manager/Drawer/Drawer';
 import { MainButton } from '@/components/buttons';
@@ -15,20 +16,19 @@ import {
   useGetRecommendationByIdQuery,
   useTriggerPdfGenerationMutation,
 } from '@/services/api/portfolioApi';
+import { RecommendationDiffModal } from '../RecommendationDiffModal/RecommendationDiffModal';
+import type { ProposalDetailDrawerProps } from './types';
 import './ProposalDetailDrawer.scss';
-
-interface ProposalDetailDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  proposalId: string | number | null;
-}
 
 export function ProposalDetailDrawer({
   isOpen,
   onClose,
   proposalId,
+  clientId,
+  latestReview,
 }: ProposalDetailDrawerProps): ReactElement {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
 
   const { data: proposal, isLoading } = useGetRecommendationByIdQuery(
     proposalId || '',
@@ -204,12 +204,28 @@ export function ProposalDetailDrawer({
               </p>
 
               <div className="proposal-detail-drawer__pdf-actions">
+                <MainButton
+                  label="Compare Portfolio Diff"
+                  variant="secondary"
+                  size="md"
+                  icon={<Layers size={16} />}
+                  iconPosition="left"
+                  onClick={() => setIsDiffModalOpen(true)}
+                />
                 {renderActionButton()}
               </div>
             </section>
           </>
         )}
       </div>
+
+      <RecommendationDiffModal
+        isOpen={isDiffModalOpen}
+        onClose={() => setIsDiffModalOpen(false)}
+        clientId={clientId}
+        proposal={proposal ?? null}
+        latestReview={latestReview}
+      />
     </Drawer>
   );
 }
