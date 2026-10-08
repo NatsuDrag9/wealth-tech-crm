@@ -13,6 +13,7 @@ import { logout } from '@/store/slices/authSlice';
 import { usePermission } from '@/hooks/usePermission';
 import { NAV_ITEMS, NavItemConfig } from '@/constants/navConstants';
 import { RagChatWidget } from '@/components/rag-chat/RagChatWidget';
+import { AgentTrace } from '@/components/utility/AgentTrace/AgentTrace';
 import './MainLayout.scss';
 
 function renderNavIcon(iconName: NavItemConfig['iconName']): React.ReactElement {
@@ -106,6 +107,7 @@ export function MainLayout(): React.ReactElement {
       </div>
 
       <RagChatWidget />
+      <AgentTrace />
     </div>
   );
 }

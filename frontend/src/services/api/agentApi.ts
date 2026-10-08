@@ -12,7 +12,10 @@ import type {
   RawAgentDraftWire,
   RawAgentStagedWire,
 } from '@/definitions/agentTypes';
-import type { PortfolioRecommendation } from '@/definitions/portfolioTypes';
+import type {
+  PortfolioRecommendation,
+  RecommendationFlowType,
+} from '@/definitions/portfolioTypes';
 
 function normalizeStepTrace(raw: RawAgentStepWire, index: number): AgentStepTrace {
   return {
@@ -89,19 +92,21 @@ function normalizeAgentResult(res: RawAgentExecutionWire): AgentExecutionResult 
   const recommendationDraft = normalizeDraft(rawDraft);
 
   const rawStaged: RawAgentStagedWire | undefined = res.staged_recommendation;
-  const flowTypeVal = rawStaged?.flow_type === 'FRESH_INVESTMENT'
-    || rawStaged?.flowType === 'FRESH_INVESTMENT'
-    ? 'FRESH_INVESTMENT'
-    : 'REPLACE_FUNDS';
+  const flowTypeVal: RecommendationFlowType = (
+    rawStaged?.flow_type === 'NEW_PORTFOLIO' || rawStaged?.flowType === 'NEW_PORTFOLIO'
+      ? 'NEW_PORTFOLIO'
+      : 'REPLACE_FUNDS'
+  );
 
-  const statusVal = rawStaged?.status === 'APPLIED' || rawStaged?.status === 'DISCARDED'
+  const statusVal = rawStaged?.status === 'PDF_GENERATED'
+    || rawStaged?.status === 'PDF_FAILED'
     ? rawStaged.status
     : 'SAVED';
 
   const stagedRecommendation: PortfolioRecommendation | null = rawStaged
     ? {
-      id: rawStaged.id,
-      clientId: rawStaged.client_id ?? rawStaged.clientId,
+      id: rawStaged.id ?? 'staged-draft',
+      clientId: rawStaged.client_id ?? rawStaged.clientId ?? '',
       portfolioReviewId: rawStaged.portfolio_review_id ?? rawStaged.portfolioReviewId,
       flowType: flowTypeVal,
       status: statusVal,
@@ -111,7 +116,7 @@ function normalizeAgentResult(res: RawAgentExecutionWire): AgentExecutionResult 
       funds: (rawStaged.funds ?? []).map((f: RawAgentFundWire, idx: number) => ({
         id: f.id ?? idx + 1,
         eligibleFund: {
-          id: f.eligible_fund_id ?? f.eligibleFundId ?? f.id,
+          id: f.eligible_fund_id ?? f.eligibleFundId ?? f.id ?? idx + 1,
           fundName: f.fund_name ?? f.fundName ?? '',
           isin: f.isin ?? '',
           fundSubCategory: f.fund_subcategory ?? f.fundSubCategory ?? '',
@@ -168,10 +173,19 @@ export const agentApi = baseApi.injectEndpoints({
         method: 'POST',
         body: {
           clientId: body.clientId,
+          client_id: body.clientId,
           portfolioReviewId: body.portfolioReviewId,
+          portfolio_review_id: body.portfolioReviewId,
           flowType: body.flowType,
+          flow_type: body.flowType,
           userGoal: body.userGoal,
+          user_goal: body.userGoal,
+          reviewFeedback: body.reviewFeedback,
+          review_feedback: body.reviewFeedback,
+          previousProposalId: body.previousProposalId,
+          previous_proposal_id: body.previousProposalId,
           agentMode: body.agentMode,
+          agent_mode: body.agentMode,
         },
       }),
       transformResponse: (response: RawAgentExecutionWire) => normalizeAgentResult(response),

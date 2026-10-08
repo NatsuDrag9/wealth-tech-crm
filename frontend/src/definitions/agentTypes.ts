@@ -8,6 +8,8 @@ export interface AgentRunRequest {
   portfolioReviewId?: string | null;
   flowType?: RecommendationFlowType;
   userGoal?: string;
+  reviewFeedback?: string;
+  previousProposalId?: string | number | null;
   agentMode: AgentMode;
 }
 

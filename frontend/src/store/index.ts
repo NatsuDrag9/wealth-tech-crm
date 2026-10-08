@@ -1,12 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { useDispatch, useSelector } from 'react-redux';
 import authReducer from './slices/authSlice';
+import agentReducer from './slices/agentSlice';
 import { baseApi } from '@/services/api/baseApi';
 import { toastMiddleware, rtkQueryErrorLogger } from './middleware';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    agent: agentReducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(
