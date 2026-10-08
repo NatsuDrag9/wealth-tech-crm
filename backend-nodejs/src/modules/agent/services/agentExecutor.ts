@@ -21,9 +21,10 @@ export class AgentExecutor {
     const clientId = request.clientId;
     const portfolioReviewId = request.portfolioReviewId || undefined;
     const flowType = request.flowType || 'REPLACE_FUNDS';
-    const userGoal =
-      request.userGoal ||
-      'Analyze the client portfolio review, verify risk category suitability, find grounded replacement funds, and stage a compliant recommendation proposal.';
+    const userGoal = request.reviewFeedback
+      ? `The Relationship Manager reviewed the previous recommendation proposal and requested adjustments: "${request.reviewFeedback}". Re-evaluate fund selection and adjust the staged recommendation proposal accordingly.`
+      : (request.userGoal ||
+        'Analyze the client portfolio review, verify risk category suitability, find grounded replacement funds, and stage a compliant recommendation proposal.');
 
     const context: AgentContext = {
       clientId,

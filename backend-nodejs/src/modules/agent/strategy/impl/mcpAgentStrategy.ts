@@ -21,9 +21,10 @@ export class McpAgentStrategy implements IAgentStrategy {
     const clientId = request.clientId;
     const portfolioReviewId = request.portfolioReviewId || undefined;
     const flowType = request.flowType || 'REPLACE_FUNDS';
-    const userGoal =
-      request.userGoal ||
-      'Coordinate autonomous portfolio advisory rebalancing by executing tools over a standardized MCP boundary.';
+    const userGoal = request.reviewFeedback
+      ? `The Relationship Manager reviewed the previous recommendation proposal and requested adjustments: "${request.reviewFeedback}". Re-evaluate fund selection and adjust the staged recommendation proposal accordingly.`
+      : (request.userGoal ||
+        'Coordinate autonomous portfolio advisory rebalancing by executing tools over a standardized MCP boundary.');
 
     logger.info({ clientId, flowType, mode: this.mode }, 'Initiating MCP Agent Strategy execution across MCP boundary...');
 

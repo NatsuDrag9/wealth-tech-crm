@@ -5,6 +5,8 @@ export interface AgentRunRequestDto {
   portfolioReviewId?: string | null;
   flowType?: 'REPLACE_FUNDS' | 'NEW_PORTFOLIO';
   userGoal?: string;
+  reviewFeedback?: string;
+  previousProposalId?: string | number | null;
   agentMode?: AgentMode;
 }
 

@@ -83,9 +83,10 @@ export class LangGraphAgentStrategy implements IAgentStrategy {
     const portfolioReviewId = request.portfolioReviewId || undefined;
     const flowType: 'REPLACE_FUNDS' | 'NEW_PORTFOLIO' =
       request.flowType === 'NEW_PORTFOLIO' ? 'NEW_PORTFOLIO' : 'REPLACE_FUNDS';
-    const userGoal =
-      request.userGoal ||
-      'Coordinate autonomous portfolio advisory rebalancing by retrieving client KYC profile, assessing risk appetite, reviewing existing holdings, performing RAG evidence retrieval, and staging a compliant recommendation draft proposal.';
+    const userGoal = request.reviewFeedback
+      ? `The Relationship Manager reviewed the previous recommendation proposal and requested adjustments: "${request.reviewFeedback}". Re-evaluate fund selection and adjust the staged recommendation proposal accordingly.`
+      : (request.userGoal ||
+        'Coordinate autonomous portfolio advisory rebalancing by retrieving client KYC profile, assessing risk appetite, reviewing existing holdings, performing RAG evidence retrieval, and staging a compliant recommendation draft proposal.');
 
     logger.info({ clientId, flowType, mode: this.mode }, 'Compiling and initiating LangGraph StateGraph agent execution...');
 
