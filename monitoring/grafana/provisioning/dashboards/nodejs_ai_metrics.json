@@ -1,0 +1,238 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "RAG Evaluation Quality Gates (SEBI Compliance & Golden Benchmark)",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "title": "Grounded Faithfulness Score",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "rag_eval_faithfulness_score",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.8 },
+              { "color": "green", "value": 0.95 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "title": "Answer Relevancy Score",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "rag_eval_relevancy_score",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "green", "value": 0.8 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "title": "IR Recall@5 (Golden Benchmark)",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "rag_eval_ir_recall{k=\"5\"}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "green", "value": 0.85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "title": "IR Mean Reciprocal Rank (MRR)",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "rag_eval_ir_mrr",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "green", "value": 0.85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 101,
+      "title": "RAG Pipeline Performance & Retrieval Latency",
+      "type": "row"
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 7 },
+      "title": "Hybrid Retrieval Latency (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "Retrieval p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth" }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 7 },
+      "title": "RAG Synthesis Latency & Synthesis Volume",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rag_synthesis_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "Synthesis Latency p95",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(rag_synthesis_total[1m]))",
+          "legendFormat": "Synthesis Rate (req/s)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line" }
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Agent Execution & LLM Token Ledger",
+      "type": "row"
+    },
+    {
+      "id": 7,
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "title": "Agent Tool Calls (by Tool & Status)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "sum by (tool_name, status) (rate(agent_tool_calls_total[1m]))",
+          "legendFormat": "{{tool_name}} [{{status}}]",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line" }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "title": "LLM Token Ledger (by Model & Token Type)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "sum by (model, token_type) (rate(llm_tokens_total[1m]))",
+          "legendFormat": "{{model}} ({{token_type}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line" }
+        }
+      }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["backend", "nodejs", "ai", "rag", "agent"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Node.js Backend — AI Evaluation & Agent Telemetry",
+  "uid": "nodejs-ai-metrics-dashboard",
+  "version": 1
+}

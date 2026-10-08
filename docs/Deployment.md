@@ -247,6 +247,36 @@ To start the observability pipeline independently:
 docker compose up -d prometheus grafana loki promtail
 ```
 
+### Auto-Provisioned Grafana Dashboards (Infrastructure-as-Code)
+
+Grafana is configured with automated dashboard provisioning (`monitoring/grafana/provisioning/dashboards/dashboards.yml`). On container startup, Grafana automatically loads four pre-built dashboards organized in the **WealthTech CRM** folder:
+
+```
+📁 WealthTech CRM (Folder)
+ ├── 📊 1. Node.js Backend — Traditional Performance & Infrastructure (uid: nodejs-traditional-dashboard)
+ ├── 🤖 2. Node.js Backend — AI Evaluation & Agent Telemetry          (uid: nodejs-ai-metrics-dashboard)
+ ├── 📊 3. Java Backend — Traditional Performance & Infrastructure    (uid: java-traditional-dashboard)
+ └── 🤖 4. Java Backend — AI Evaluation & Agent Telemetry             (uid: java-ai-metrics-dashboard)
+```
+
+#### Dashboard Architecture & Panel Matrix
+
+| Application | Dashboard Type | Dashboard JSON File | Visual Panels & Tracked Metrics |
+| :--- | :--- | :--- | :--- |
+| **Node.js Express** | **Traditional Performance & Infrastructure** | `nodejs_traditional.json` | • Service Status (`up`)<br/>• Process Heap Used (`nodejs_heap_size_used_bytes`)<br/>• Event Loop Lag (`nodejs_eventloop_lag_seconds`)<br/>• Active Handles (`nodejs_active_handles_total`)<br/>• HTTP Request Rate by Route & Status Code (`http_request_duration_seconds_count`)<br/>• HTTP Latency p95/p99 (`http_request_duration_seconds_bucket`)<br/>• S3 / LocalStack Latency (`s3_operation_duration_seconds`)<br/>• PII Protection Gateway Tokenization Latency (`pii_tokenization_duration_seconds`) |
+| **Node.js Express** | **AI Evaluation & Agent Telemetry** | `nodejs_ai_metrics.json` | • Grounded Faithfulness Score Gauge (`rag_eval_faithfulness_score`)<br/>• Answer Relevancy Score Gauge (`rag_eval_relevancy_score`)<br/>• IR Recall@5 Benchmark Gauge (`rag_eval_ir_recall`)<br/>• IR Mean Reciprocal Rank MRR Gauge (`rag_eval_ir_mrr`)<br/>• Hybrid Retrieval Latency p95 (`rag_retrieval_duration_seconds`)<br/>• RAG Synthesis Latency & Volume (`rag_synthesis_duration_seconds`, `rag_synthesis_total`)<br/>• Agent Tool Invocations by Tool & Status (`agent_tool_calls_total`)<br/>• LLM Token Ledger by Model & Type (`llm_tokens_total`) |
+| **Java Spring Boot** | **Traditional Performance & Infrastructure** | `java_traditional.json` | • Service Status (`up`)<br/>• JVM Heap Used (`jvm_memory_used_bytes`)<br/>• HikariCP Active DB Connections (`hikaricp_connections_active`)<br/>• JVM Live Threads (`jvm_threads_live_threads`)<br/>• Spring MVC Request Rate by URI & Status (`http_server_requests_seconds_count`)<br/>• HTTP Server Latency p95 & Max (`http_server_requests_seconds_bucket`)<br/>• JVM Garbage Collection Pause Duration (`jvm_gc_pause_seconds_sum`)<br/>• JVM & System CPU Usage (`process_cpu_usage`, `system_cpu_usage`) |
+| **Java Spring Boot** | **AI Evaluation & Agent Telemetry** | `java_ai_metrics.json` | • Grounded Faithfulness Score Gauge (`rag_eval_faithfulness_score`)<br/>• Answer Relevancy Score Gauge (`rag_eval_relevancy_score`)<br/>• IR Recall@5 Benchmark Gauge (`rag_eval_ir_recall`)<br/>• IR Mean Reciprocal Rank MRR Gauge (`rag_eval_ir_mrr`)<br/>• RAG Evaluation Runs by Evaluator & Verdict (`rag_eval_runs_total`)<br/>• RAG Judge Execution Duration (`rag_eval_duration_seconds`)<br/>• RAG Endpoint Throughput (`http_server_requests_seconds_count` for `/.*rag.*/`)<br/>• Grounded Faithfulness & Relevancy Historical Distributions |
+
+#### Direct Dashboard Access Links
+When running the monitoring containers (`http://localhost:3001` with `admin` / `admin`):
+* **Dashboards Root**: [http://localhost:3001/dashboards](http://localhost:3001/dashboards)
+* **Node.js Traditional**: [http://localhost:3001/d/nodejs-traditional-dashboard](http://localhost:3001/d/nodejs-traditional-dashboard)
+* **Node.js AI Evaluation**: [http://localhost:3001/d/nodejs-ai-metrics-dashboard](http://localhost:3001/d/nodejs-ai-metrics-dashboard)
+* **Java Traditional**: [http://localhost:3001/d/java-traditional-dashboard](http://localhost:3001/d/java-traditional-dashboard)
+* **Java AI Evaluation**: [http://localhost:3001/d/java-ai-metrics-dashboard](http://localhost:3001/d/java-ai-metrics-dashboard)
+
+
 ---
 
 ## 6. API Documentation (Swagger / OpenAPI)
