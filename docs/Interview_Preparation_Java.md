@@ -246,3 +246,6 @@ We separated evaluation into two distinct dimensions: **Information Retrieval (I
 | **Agent Autonomy** | **Human-in-the-Loop Staging** | Full Autonomous Execution | In fiduciary wealth management, autonomous portfolio mutation is a regulatory violation. Staging proposals keeps the RM legally liable and in control. |
 | **PII Redaction** | **Deterministic Regex Gateway** | Heavy ML / NER Models | Near-zero latency (~1ms), zero external dependencies, 100% predictable redaction for standardized financial formats (PAN, Aadhaar, phones). |
 | **LLM Resilience** | **Model Cascading on 429** | Blind Retries | Prevents wasted round-trips to rate-limited models; immediately cascades to secondary models or offline fallback engines. |
+
+
+
