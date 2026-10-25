@@ -402,6 +402,85 @@ flowchart TD
 ### RAG Evaluation Benchmark (Native Test Suite)
 We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGenerationService` (Gemini 2.0 Flash) directly inside Vitest over external frameworks (Ragas / Promptfoo / Autoevals). This eliminates external framework dependencies and native C++ build overhead while enabling seamless CI/CD test execution with offline fallback support.
 
+### Token Engineering, Sizing & Cost Control
+
+Token engineering is the practice of carefully designing how many words and numbers (tokens) we send to and receive from the AI model (Gemini). Doing this keeps response times fast, prevents runaway cloud bills, and ensures the AI never forgets important facts.
+
+#### 1. Token Split: What Makes Up Each AI Turn?
+Every time the system calls the AI, tokens are split into two categories: **Input** (what we send) and **Output** (what the AI generates back).
+
+* **Input Tokens (~1,850 to 2,900 tokens)**:
+  - **System Prompt & Rules (~350 – 450 tokens)**: Sets the persona (SEBI-compliant Wealth Advisory Assistant), formatting rules, and strict instructions not to make things up (no hallucinations).
+  - **User Question (~100 – 250 tokens)**: The specific query typed by the advisor (e.g., *"What is the expense ratio and risk level of Parag Parikh Flexi Cap Fund?"*).
+  - **Regulatory Document Chunks (~1,200 – 1,800 tokens)**: The top 3 to 5 matching chunks from mutual fund factsheets, scheme documents, and riskometers retrieved by the RAG search.
+  - **Recent Chat History (~200 – 400 tokens)**: The last 2 to 3 conversation turns so the AI understands follow-up questions.
+* **Output Tokens (~350 to 700 tokens)**:
+  - **Answer Text (~250 – 450 tokens)**: The plain-English explanation, comparison, or fund recommendation.
+  - **Source Citations (~100 – 250 tokens)**: Explicit references to original documents (e.g., `[Source 1: Facts & TER, Page 4]`) so advisors can verify the numbers.
+* **Total per Turn**: Between **~2,200 and 3,600 tokens**.
+* **For Autonomous Agent Runs (`agentExecutor`)**: Each tool-decision step sends ~700 to 1,400 tokens and receives ~80 to 250 tokens (the tool name and JSON parameters). A full 5-step proposal run uses around ~7,500 total tokens.
+
+#### 2. Context Window: How It Is Built for the Chatbot & Its Token Impact
+The **context window** is the total working memory the AI has available in a single turn.
+
+* **How it is constructed**:
+  1. We start with the fixed system instructions.
+  2. We fetch the last 3 messages from MongoDB (`rag_conversation_turns`) so the user can ask follow-ups like *"How does that compare to its benchmark?"* without repeating fund names.
+  3. We run our hybrid search (vector similarity + text keywords) to find only the most relevant document chunks.
+  4. We paste only those passing chunks into the prompt labeled as `[Source 1]`, `[Source 2]`, etc.
+  5. We append the current user question at the end.
+* **Impact on tokens**:
+  - Without a sliding window, chat histories grow infinitely. By 10 turns, the prompt would balloon past 10,000 tokens, slowing down responses and multiplying costs.
+  - By capping history to the last 3 turns (**Window Buffer Memory**), chat history token usage is permanently locked to under 400 tokens, leaving maximum room for factual document evidence.
+
+#### 3. Token-Based Pricing, Rough Calculations & Cost Control
+AI providers charge by the million tokens processed. Using Google Gemini 2.0 Flash rates:
+- **Input Tokens**: ~$0.10 per 1,000,000 tokens (~₹0.0083 per 1K tokens).
+- **Output Tokens**: ~$0.40 per 1,000,000 tokens (~₹0.033 per 1K tokens).
+
+**Rough Real-World Calculations**:
+* **One Advisor RAG Question**:
+  - Input: 2,500 tokens × $0.10 / 1,000,000 = $0.00025
+  - Output: 500 tokens × $0.40 / 1,000,000 = $0.00020
+  - **Cost per Question**: **~$0.00045 USD** (~₹0.037 INR — less than 4 paise).
+* **One Full Autonomous Portfolio Rebalance (5 Agent Steps)**:
+  - Total cumulative tokens: ~7,500 tokens
+  - **Cost per Complete Staged Proposal**: **~$0.0018 USD** (~₹0.15 INR — 15 paise).
+
+**Cost Control Mechanisms**:
+* **Quality Gate Rejection**: If our search cannot find high-quality evidence (similarity score < 0.70), we **completely skip calling the AI model**. The system tells the advisor no verified document was found, saving 100% of the generation cost.
+* **Token Capping**: We set `maxOutputTokens: 2048`, meaning the AI is cut off if it tries to write an endlessly long answer.
+* **Low Temperature**: We use `temperature: 0.2` to stop the AI from wandering or repeating words, keeping outputs short and direct.
+
+#### 4. Token Budgeting: How We Control Prompt and Response Sizes
+To prevent oversized prompts from crashing or slowing down the application, we enforce hard limits at every step:
+* **Small Document Chunks**: Documents are split into pieces of exactly **800 characters** (with 150 characters of overlap). This guarantees no single chunk can exceed ~200 to 250 tokens.
+* **Top-K Retrieval Cap**: We retrieve at most **5 chunks** (`topK = 5`). Evidence never exceeds ~1,500 tokens.
+* **History Turn Limit**: We only keep the last **3 conversation turns** in the active prompt.
+* **Agent Step Budget**: The agent is hard-capped at **8 maximum steps** (`MAX_STEPS = 8`). It can never loop forever or burn through unlimited tokens.
+
+#### 5. Usage Tracking: Where Logs & Metrics Live in Our Logging Stack
+We track every token and AI interaction in three coordinated places:
+1. **Application Logs (`pino` → Promtail → Loki → Grafana)**:
+   - Every AI request and response is logged as structured JSON by `logger.ts`.
+   - When Gemini returns token usage numbers (`promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`), they are captured in the logs.
+   - Promtail ships these logs to Grafana Loki, allowing teams to filter logs by client ID, response latency, or model name.
+2. **Prometheus Metrics (`/nodejs-wtc-api/v1/metrics`)**:
+   - `rag_synthesis_duration_seconds`: Measures how long the AI takes to respond.
+   - `rag_synthesis_total`: Counts successful grounded answers vs. ungrounded rejections.
+   - `agent_execution_iterations`: Tracks how many steps the autonomous agent took.
+   - `agent_tool_calls_total`: Records how often each tool (`getClientDetails`, `stageDraftProposal`, etc.) was invoked.
+3. **Database Audit Records (MongoDB)**:
+   - Each conversation turn is saved in `rag_conversation_turns` with exact timestamps and groundedness status.
+   - Each agent proposal saves a step-by-step trace (`traces`) showing the exact input, output, and duration of every single tool call.
+
+#### 6. Rate Limits & Quota Exhaustion (Handling HTTP 429)
+AI models enforce strict rate limits on Requests-Per-Minute (RPM) and Tokens-Per-Minute (TPM):
+* **Transient Network Glitches (HTTP 500, 502, 503)**: The system automatically pauses and retries with randomized wait times (**exponential backoff with jitter**: 1s, 2s, 4s) up to 4 times.
+* **Rate Limit & Quota Exhaustion (HTTP 429)**: Retrying an exhausted model burns time and always fails. Therefore, when HTTP 429 occurs, the system **instantly stops retrying that model** and automatically cascades to backup models in priority order:
+  $$\text{gemini-3.8-flash (Primary)} \longrightarrow \text{gemini-3.5-flash (Secondary)} \longrightarrow \text{gemini-flash-latest (Tertiary)}$$
+* **Total Outage Protection**: If all backup models fail, the system activates an **honest degradation sentinel** (`[SYNTHESIS_UNAVAILABLE]`), cleanly displaying raw verified factsheets without inventing false information or throwing an unhandled 500 error.
+
 ---
 
 ## Autonomous Portfolio Advisory Agent Architecture ("Perform with AI")
