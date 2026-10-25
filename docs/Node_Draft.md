@@ -143,13 +143,15 @@ flowchart TD
         PIIFwd["PiiProtectionGateway (Forward Pass)<br/>(Redact PAN, Phone, Email, Name -> Ephemeral Vault)"]
         CandidateGate["SEBI Candidate Pre-Filtering Gate<br/>(Resolve Candidate ISINs by Client Risk Assessment)"]
         HybridEngine["Hybrid Scoring Engine<br/>0.70 * Cosine Similarity + 0.30 * Lexical Score"]
-        QualityGate{"Evidence Quality Gate<br/>Top Similarity >= 0.70?"}
+        QualityGate{"Pre-Gen Retrieval Quality Gate<br/>Top Similarity >= 0.70?"}
         Refiner["RagQueryRefinerService<br/>(Canonical Term Expansion Loop)"]
         PromptAssembler["Grounded Prompt Assembly<br/>(System Guardrails + Source-Tagged Evidence)"]
         LLMGen["GeminiGenerationService<br/>(Gemini 2.0 Flash, temp=0.2, Structured Output)"]
+        PostGenCheck{"Post-Gen Groundedness Check<br/>Valid Citations & No Sentinel?"}
         PIIBack["PiiProtectionGateway (Backward Pass)<br/>(Rehydrate Tokens -> Authentic Client Data)"]
         FinalResp["SEBI-Compliant Grounded Response<br/>+ Exact Source Citations & Telemetry"]
-        DefensiveDegrade["Defensive Degradation (Bypass LLM)<br/>'No verified disclosures meet quality threshold'"]
+        DefensiveDegrade["Defensive Degradation (Bypass LLM)<br/>rag_synthesis_total{grounded='false'}"]
+        SentinelFallback["Honest Sentinel Degradation<br/>rag_synthesis_total{grounded='false'}"]
 
         UserQuery --> PIIFwd
         PIIFwd --> CandidateGate
@@ -161,7 +163,9 @@ flowchart TD
         QualityGate -- "Score >= 0.70 (Pass)" --> PromptAssembler
         QualityGate -- "Still < 0.70 after Retry" --> DefensiveDegrade
         PromptAssembler --> LLMGen
-        LLMGen --> PIIBack
+        LLMGen --> PostGenCheck
+        PostGenCheck -- "Pass (Grounded = true)" --> PIIBack
+        PostGenCheck -- "Sentinel Outage (Grounded = false)" --> SentinelFallback
         PIIBack --> FinalResp
     end
 
@@ -278,6 +282,50 @@ flowchart TD
 12. **Conversational Dialogue Memory (Window Buffer - Approach A)**:
     - **Persistent Entity (`RagConversationTurn.ts`)**: Mapped to MongoDB collection `rag_conversation_turns` (`conversationId`, `turnIndex`, `userQuery`, `synthesizedAnswer`, `isGrounded`, `clientId`, `createdAt`).
     - **Sliding Window History Injection**: Requests with a `conversationId` retrieve the last N turns (`config.rag.maxHistoryTurns: 3`) and inject them into `### PRIOR CONVERSATION HISTORY`, enabling multi-turn contextual follow-ups without unbounded token accumulation.
+
+#### Groundedness Checks and Fact-Checking Evaluator
+
+To guarantee that Indian wealth management advisors never receive hallucinated or ungrounded financial advice, the application implements a multi-tier safety architecture. We separate **live runtime checks** (low latency, zero extra LLM cost) from **deep offline benchmark evaluations** (evaluating faithfulness against a golden dataset):
+
+##### 1. Live Runtime: Pre-Generation `similarity_score_threshold` Gate
+* **Where it runs**: Immediately after the Hybrid Scoring Engine finishes retrieval and before prompt assembly (`ragSynthesisService.ts`).
+* **What it does**: Checks if the top retrieved chunk meets the cosine similarity cutoff (`similarityThreshold = 0.70`).
+* **Action on failure**:
+  1. It triggers the automated query refiner to see if canonical financial terms (e.g., expanding "cost" to "Total Expense Ratio TER Direct Plan") improve retrieval.
+  2. If the refined score is still $< 0.70$, the pipeline **completely bypasses LLM generation** (100% token cost avoidance).
+  3. It marks `isGrounded = false`, increments `rag_synthesis_total{grounded="false"}`, and returns a defensive warning explaining that no verified regulatory filings met the quality bar.
+
+##### 2. Live Runtime: Post-Generation Groundedness & Sentinel Check
+* **Where it runs**: Immediately after Google Gemini returns the generated text (`ragSynthesisService.ts`).
+* **What it does**: Inspects the generated output to verify two things:
+  1. **Inline Citations**: The text contains mandatory bracketed citations (`[Source 1]`) matching retrieved factsheet snippets.
+  2. **Sentinel Outage Detection**: The text is checked against `GeminiGenerationService.isSynthesisUnavailable()`. If upstream Gemini rate limits (429) or outages caused all cascading models (`gemini-3.8-flash` $\rightarrow$ `gemini-3.5-flash` $\rightarrow$ `gemini-flash-latest`) to fail, the backend returns an honest degradation sentinel (`[SYNTHESIS_UNAVAILABLE]`) containing raw verified chunks.
+* **Action & Telemetry**:
+  - If the sentinel was triggered, the response is marked `isGrounded = false` and increments `rag_synthesis_total{grounded="false"}`.
+  - If valid grounded text with citations was generated, the response is marked `isGrounded = true` and increments `rag_synthesis_total{grounded="true"}`.
+
+> [!NOTE]
+> **Disambiguating `rag_synthesis_total`**:
+> In our Prometheus metrics, `rag_synthesis_total` records `grounded="false"` in two distinct scenarios:
+> 1. **Pre-Generation Drop**: Retrieval quality gate failed (LLM was never called, saving cost).
+> 2. **Post-Generation Outage**: All LLM cascade models were unavailable or rate-limited.
+>
+> On Grafana dashboards, operators distinguish between the two by comparing `rag_similarity_score` alongside `rag_synthesis_duration_seconds`. A pre-generation drop has $0\,\text{ms}$ synthesis latency, whereas an outage drop reflects model cascade timeout latencies.
+
+##### 3. Offline CI/CD Benchmark: Fact-Checking Evaluator & Golden Dataset
+* **Did we implement this?**: **Yes, in the automated benchmark test harness** ([`goldenDataset.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/tests/unit/goldenDataset.ts) and [`ragBenchmarkGeneration.test.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/tests/unit/ragBenchmarkGeneration.test.ts)), rather than synchronously on every live production HTTP request.
+* **Why run it in benchmark tests instead of inline live requests?**:
+  - Running a full LLM-as-a-Judge (e.g., asking Gemini at `temperature: 0.0` to verify every sentence against the ground truth) on every single live advisor message would add **2 to 4 seconds of latency** to every user turn and **double the token cost**.
+  - In production engineering, deep semantic evaluation is executed as an automated regression benchmark during CI/CD or scheduled batch runs.
+* **How the Fact-Checking Evaluator works**:
+  - **The Golden Dataset**: [`goldenDataset.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/tests/unit/goldenDataset.ts) contains curated, expert-labeled test cases across 4 query archetypes: `FACTOID` (e.g. TER percentages), `MULTI_HOP` (e.g. equity mandates + riskometer ratings), `COMPARATIVE` (e.g. Large Cap vs Flexi Cap mandates), and `ADVERSARIAL_OUT_OF_SCOPE` (e.g. baking recipes or ungrounded queries).
+  - **Fact-Checking & Faithfulness Verification**: In [`ragBenchmarkGeneration.test.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/tests/unit/ragBenchmarkGeneration.test.ts), answers generated by the pipeline are evaluated against ground truth facts. For instance, in factoid queries, the evaluator asserts that the exact figures (e.g., `0.63% TER`) appear and that hallucinated figures (e.g., `1.5%`) are absent.
+  - **Semantic Answer Relevancy**: The benchmark embeds the question and synthesized answer using `geminiEmbeddingService` and verifies that cosine similarity exceeds the semantic relevancy threshold ($\ge 0.40$).
+  - **Publishing Evaluation Telemetry**: Evaluation results are published directly to Prometheus and Loki using [`ragEvaluationTelemetryService.ts`](file:///home/rohitimandi/Desktop/Rohit/Personal/Online_Project_Uploads/wealth-tech-crm/backend-nodejs/src/modules/portfolioreview/services/ragEvaluationTelemetryService.ts):
+    - `rag_eval_faithfulness_score`: Gauge tracking factual faithfulness (0.0 to 1.0).
+    - `rag_eval_relevancy_score`: Gauge tracking answer semantic relevancy.
+    - `rag_eval_runs_total{evaluator="fact_checking", verdict="pass|fail"}`: Counter tracking test runs.
+    - `rag_eval_ir_recall`, `rag_eval_ir_ndcg`, `rag_eval_ir_mrr`: Information retrieval benchmark metrics.
 
 ---
 
@@ -402,7 +450,7 @@ flowchart TD
 ### RAG Evaluation Benchmark (Native Test Suite)
 We chose a **Native TypeScript Evaluation Suite** using our built-in `geminiGenerationService` (Gemini 2.0 Flash) directly inside Vitest over external frameworks (Ragas / Promptfoo / Autoevals). This eliminates external framework dependencies and native C++ build overhead while enabling seamless CI/CD test execution with offline fallback support.
 
-### Token Engineering, Sizing & Cost Control
+### Token Engineering, Context Budgeting and Cost Control
 
 Token engineering is the practice of carefully designing how many words and numbers (tokens) we send to and receive from the AI model (Gemini). Doing this keeps response times fast, prevents runaway cloud bills, and ensures the AI never forgets important facts.
 
@@ -412,13 +460,14 @@ Every time the system calls the AI, tokens are split into two categories: **Inpu
 * **Input Tokens (~1,850 to 2,900 tokens)**:
   - **System Prompt & Rules (~350 – 450 tokens)**: Sets the persona (SEBI-compliant Wealth Advisory Assistant), formatting rules, and strict instructions not to make things up (no hallucinations).
   - **User Question (~100 – 250 tokens)**: The specific query typed by the advisor (e.g., *"What is the expense ratio and risk level of Parag Parikh Flexi Cap Fund?"*).
-  - **Regulatory Document Chunks (~1,200 – 1,800 tokens)**: The top 3 to 5 matching chunks from mutual fund factsheets, scheme documents, and riskometers retrieved by the RAG search.
-  - **Recent Chat History (~200 – 400 tokens)**: The last 2 to 3 conversation turns so the AI understands follow-up questions.
+  - **Regulatory Document Chunks (~1,200 – 1,800 tokens)**: The top 3 to 5 matching chunks from mutual fund factsheets, scheme documents, and riskometers retrieved by the RAG search. Hard-capped at **$K = 5$** chunks (`topK = 5`).
+  - **Recent Chat History (~200 – 400 tokens)**: The last 3 conversation turns so the AI understands follow-up questions without needing previous fund names repeated.
 * **Output Tokens (~350 to 700 tokens)**:
-  - **Answer Text (~250 – 450 tokens)**: The plain-English explanation, comparison, or fund recommendation.
+  - **Answer Text (~250 – 450 tokens)**: Direct, plain-English explanation of fund metrics, risk levels, and benchmark comparisons.
   - **Source Citations (~100 – 250 tokens)**: Explicit references to original documents (e.g., `[Source 1: Facts & TER, Page 4]`) so advisors can verify the numbers.
+  - **Document Links (S3 Pre-Signed URLs)**: The AI does **not** make up or hallucinate file links. Instead, our backend looks up the real file key in cloud storage (AWS S3 / LocalStack) and generates a secure, 15-minute expiring link (**pre-signed URL**) in the response data so advisors can safely open the exact official PDF document.
 * **Total per Turn**: Between **~2,200 and 3,600 tokens**.
-* **For Autonomous Agent Runs (`agentExecutor`)**: Each tool-decision step sends ~700 to 1,400 tokens and receives ~80 to 250 tokens (the tool name and JSON parameters). A full 5-step proposal run uses around ~7,500 total tokens.
+* **For Autonomous Agent Runs (`agentExecutor`, `langGraphAgentStrategy`, `mcpAgentStrategy`)**: Each tool-decision step sends ~700 to 1,400 tokens and receives ~80 to 250 tokens (the tool name and JSON parameters). A full 5-step proposal run uses around **~7,500 total tokens**.
 
 #### 2. Context Window: How It Is Built for the Chatbot & Its Token Impact
 The **context window** is the total working memory the AI has available in a single turn.
@@ -431,7 +480,7 @@ The **context window** is the total working memory the AI has available in a sin
   5. We append the current user question at the end.
 * **Impact on tokens**:
   - Without a sliding window, chat histories grow infinitely. By 10 turns, the prompt would balloon past 10,000 tokens, slowing down responses and multiplying costs.
-  - By capping history to the last 3 turns (**Window Buffer Memory**), chat history token usage is permanently locked to under 400 tokens, leaving maximum room for factual document evidence.
+  - By capping history to the last 3 turns (**Window Buffer Memory**), chat history token usage is permanently locked to under 400 tokens, leaving 80%+ of the context room for factual document evidence.
 
 #### 3. Token-Based Pricing, Rough Calculations & Cost Control
 AI providers charge by the million tokens processed. Using Google Gemini 2.0 Flash rates:
@@ -439,37 +488,54 @@ AI providers charge by the million tokens processed. Using Google Gemini 2.0 Fla
 - **Output Tokens**: ~$0.40 per 1,000,000 tokens (~₹0.033 per 1K tokens).
 
 **Rough Real-World Calculations**:
-* **One Advisor RAG Question**:
-  - Input: 2,500 tokens × $0.10 / 1,000,000 = $0.00025
-  - Output: 500 tokens × $0.40 / 1,000,000 = $0.00020
-  - **Cost per Question**: **~$0.00045 USD** (~₹0.037 INR — less than 4 paise).
-* **One Full Autonomous Portfolio Rebalance (5 Agent Steps)**:
-  - Total cumulative tokens: ~7,500 tokens
-  - **Cost per Complete Staged Proposal**: **~$0.0018 USD** (~₹0.15 INR — 15 paise).
+| Operation | Input Tokens | Output Tokens | Total Tokens | Cost in USD | Cost in INR (₹) |
+|---|---|---|---|---|---|
+| **One Advisor RAG Question** | ~2,500 | ~500 | ~3,000 | **~$0.00045** | **~₹0.037** (less than 4 paise) |
+| **One Full Autonomous Portfolio Rebalance (5 Steps)** | ~6,500 | ~1,000 | ~7,500 | **~$0.00180** | **~₹0.150** (15 paise) |
+| **1,000 Advisor Questions / Day** | ~2,500,000 | ~500,000 | ~3,000,000 | **~$0.45 / day** | **~₹37.50 / day** |
 
 **Cost Control Mechanisms**:
-* **Quality Gate Rejection**: If our search cannot find high-quality evidence (similarity score < 0.70), we **completely skip calling the AI model**. The system tells the advisor no verified document was found, saving 100% of the generation cost.
-* **Token Capping**: We set `maxOutputTokens: 2048`, meaning the AI is cut off if it tries to write an endlessly long answer.
-* **Low Temperature**: We use `temperature: 0.2` to stop the AI from wandering or repeating words, keeping outputs short and direct.
+* **Quality Gate Rejection (100% Cost Avoidance)**: If our search cannot find high-quality evidence (similarity score < 0.70), we **completely skip calling the AI model**. The system tells the advisor no verified document was found, saving 100% of the generation cost.
+* **Token Capping (`maxOutputTokens: 2048`)**: The AI is cut off if it tries to write an endlessly long answer.
+* **Low Temperature (`temperature: 0.2`)**: Stops the AI from wandering or repeating words, keeping outputs short and direct.
+* **Zero Thinking Budget (`thinkingBudget: 0`)**: Turns off internal reasoning tokens on thinking-capable models so we do not pay extra for hidden thoughts.
 
-#### 4. Token Budgeting: How We Control Prompt and Response Sizes
-To prevent oversized prompts from crashing or slowing down the application, we enforce hard limits at every step:
-* **Small Document Chunks**: Documents are split into pieces of exactly **800 characters** (with 150 characters of overlap). This guarantees no single chunk can exceed ~200 to 250 tokens.
-* **Top-K Retrieval Cap**: We retrieve at most **5 chunks** (`topK = 5`). Evidence never exceeds ~1,500 tokens.
-* **History Turn Limit**: We only keep the last **3 conversation turns** in the active prompt.
-* **Agent Step Budget**: The agent is hard-capped at **8 maximum steps** (`MAX_STEPS = 8`). It can never loop forever or burn through unlimited tokens.
+#### 4. Token Budgeting: Parameter Choices & Practical Start Values
+To prevent oversized prompts from crashing or slowing down the application, we set clear limits. Here is why each parameter was chosen:
+
+| Parameter & Value | Location in Code | Why It Was Chosen | Practical Start Value? |
+|---|---|---|---|
+| **`topK = 5`** | `ragController.ts`, `ragService.ts` | Factsheet chunks are ~250–300 words each. 5 chunks provide enough information to compare 1 or 2 funds (returns, expense ratio, riskometer) without making the prompt too big or slow. | **Yes, chosen as a practical start value.** Gives good recall for 2-fund comparisons. Can be lowered to 3 for single-fund questions to save tokens, or raised to 8 for large comparisons. |
+| **`maxHistoryTurns = 3`** | `ragService.ts` | Advisors usually ask immediate follow-up questions (e.g., *"What is its expense ratio?"*). 3 turns preserve context while keeping history under 400 tokens (~12% of the prompt). | **Yes, chosen as a practical start value.** Keeps conversations smooth while leaving 80%+ of the prompt space for real fund factsheets. |
+| **`similarityThreshold = 0.70`** | `ragService.ts` | Filters out weak or irrelevant search results before they reach the AI. In finance, giving the AI weak context causes it to make up numbers. | **Yes, chosen as a practical start value.** Good filter level for embeddings. If no chunks score 0.70+, the AI is skipped completely, saving 100% of the cost. |
+| **`MAX_STEPS = 8`** | `agentExecutor.ts`, `langGraphAgentStrategy.ts`, `mcpAgentStrategy.ts` | Safety switch to prevent the agent from getting stuck in an infinite loop. A normal rebalance takes 5 steps (Client $\rightarrow$ Risk $\rightarrow$ Holdings $\rightarrow$ Fund Search $\rightarrow$ Draft). 8 steps gives it 3 extra tries to recover if a search comes back empty. | **Yes, chosen as a practical start value.** Protects against runaway API bills while giving the agent room to self-correct. |
+| **`chunkSize = 800` & `chunkOverlap = 150` characters** | `ragIngestionService.ts` | Fund factsheets have small tables and disclosure notes. 800 characters (~160–200 words) captures an entire disclosure topic without cutting it in half. The 150-character overlap keeps sentences from breaking at edges. | **Yes, chosen as a practical start value.** Standard sweet spot for financial PDFs that keeps chunks focused. |
+| **`temperature = 0.2`** | `geminiClient.ts`, `ragService.ts` | For financial advice, we do not want creative writing. A low temperature makes the AI stick strictly to the factsheet text and give concise answers. | **Yes, chosen as a practical start value.** Keeps answers short and direct, directly saving output tokens. |
+| **`maxOutputTokens = 2048`** | `geminiClient.ts` | Hard ceiling on output length. A normal fund answer or proposal needs only 300 to 800 tokens. 2,048 gives plenty of room for comparison tables while preventing infinite generation loops. | **Yes, chosen as a practical start value.** Safe upper boundary. |
+| **`thinkingBudget = 0`** | `geminiClient.ts` | On newer thinking models, internal thoughts count as billed output tokens. Turning this to 0 prevents paying for internal thoughts since our instructions are already clear. | **Yes, chosen as a practical start value.** Practical cost saving default. |
+| **`timeoutMs = 60000`** | `geminiClient.ts` | Max time to wait for Gemini to respond (60 seconds). Handles slow network times without freezing the server forever. | **Yes, chosen as a practical start value.** Standard safe timeout. |
+| **`retries = 4`, `backoff = 1s, 2s, 4s` with jitter** | `geminiClient.ts` | If Gemini has a temporary network hiccup (500 or 503), the system waits and retries up to 4 times with randomized jitter so servers aren't hit at the same exact millisecond. | **Yes, chosen as practical start values.** Standard resilience practice for cloud APIs. |
+
+##### How to Tune These Systematically Instead of Guessing:
+* **For $K$**: Test 20 to 30 common questions at $K=3$, $K=5$, and $K=8$. If $K=3$ already gives 95%+ accurate answers, lower it to save ~600 tokens per call.
+* **For `MAX_STEPS`**: Look at the saved proposal `traces` in MongoDB over 100 real runs. If 98% of runs finish in 5 steps, 8 steps is confirmed as a safe limit.
+* **For Chat History**: Review real chat logs. If users rarely refer back to things said 4 messages ago, 3 turns is the right size.
 
 #### 5. Usage Tracking: Where Logs & Metrics Live in Our Logging Stack
 We track every token and AI interaction in three coordinated places:
 1. **Application Logs (`pino` → Promtail → Loki → Grafana)**:
    - Every AI request and response is logged as structured JSON by `logger.ts`.
-   - When Gemini returns token usage numbers (`promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`), they are captured in the logs.
+   - When Gemini returns token usage numbers (`promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`), they are captured directly in the log message.
    - Promtail ships these logs to Grafana Loki, allowing teams to filter logs by client ID, response latency, or model name.
 2. **Prometheus Metrics (`/nodejs-wtc-api/v1/metrics`)**:
-   - `rag_synthesis_duration_seconds`: Measures how long the AI takes to respond.
-   - `rag_synthesis_total`: Counts successful grounded answers vs. ungrounded rejections.
-   - `agent_execution_iterations`: Tracks how many steps the autonomous agent took.
-   - `agent_tool_calls_total`: Records how often each tool (`getClientDetails`, `stageDraftProposal`, etc.) was invoked.
+   - **`rag_synthesis_duration_seconds`**: Measures how long the AI takes to respond.
+     - *How it's implemented in `backend-nodejs`*: In `geminiGenerationService.ts`, we start a timer using `ragSynthesisDurationSeconds.startTimer({ status: 'success' })` right before calling the Gemini API and stop it as soon as the response arrives.
+   - **`rag_synthesis_total`**: Counts successful grounded answers (`grounded: 'true'`) vs. ungrounded outcomes (`grounded: 'false'`).
+     - *How it's implemented in `backend-nodejs`*: In `ragSynthesisService.ts`, `ragSynthesisTotal.inc({ grounded: 'false' })` is triggered in two distinct places: (1) **pre-generation** when the retrieval similarity quality gate fails (< 0.70, completely bypassing the LLM), and (2) **post-generation** when upstream model rate limits (HTTP 429) trigger the honest degradation sentinel (`[SYNTHESIS_UNAVAILABLE]`). When Gemini successfully generates an answer with valid citations, it increments `ragSynthesisTotal.inc({ grounded: 'true' })`. *(For full architectural details and benchmark testing, see [Groundedness Checks and Fact-Checking Evaluator](#groundedness-checks-and-fact-checking-evaluator)).*
+   - **`agent_execution_iterations`**: Tracks how many steps the autonomous agent took to complete a portfolio proposal.
+     - *How it's implemented in `backend-nodejs`*: In `agentExecutor.ts`, `langGraphAgentStrategy.ts`, and `mcpAgentStrategy.ts`, at the end of a run we record the total steps taken into histogram buckets using `agentExecutionIterations.observe({ agent_name: ... }, traces.length)`.
+   - **`agent_tool_calls_total`**: Records how often each tool (`getClientDetails`, `stageDraftProposal`, etc.) was invoked.
+     - *How it's implemented in `backend-nodejs`*: Inside each agent loop step, whenever a tool is dispatched, we increment `agentToolCallsTotal.inc({ agent_name: ..., tool_name: name, status: 'invoked' })` to track individual tool usage.
 3. **Database Audit Records (MongoDB)**:
    - Each conversation turn is saved in `rag_conversation_turns` with exact timestamps and groundedness status.
    - Each agent proposal saves a step-by-step trace (`traces`) showing the exact input, output, and duration of every single tool call.
