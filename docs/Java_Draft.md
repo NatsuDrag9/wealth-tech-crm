@@ -294,6 +294,15 @@ flowchart TD
    - **Approach B — Rolling Summarizer Memory (LangChain `ConversationSummaryMemory` pattern)**: A background or synchronous LLM call condenses older turns into a running text summary once the dialogue exceeds $N$ turns. This keeps prompt token counts strictly bounded over long sessions at the cost of an additional LLM generation call per turn.
    - **Approach C — Vector RAG-on-History**: Each dialogue turn is converted into a vector embedding and stored in a conversational vector index, allowing similarity search across past dialogue turns. This is ideal for multi-day, multi-topic advisory dialogues spanning dozens of turns, but introduces vector index overhead for short CRM sessions.
 
+###### F. Groundedness Checks & Fact-Checking Evaluator (LLM-as-a-Judge)
+1. **Live API vs. Offline Evaluation Distinction**:
+   - *In Live Requests (`RagSynthesisService.java`)*: We do not run a second LLM evaluation call per message because it would add ~2s latency and double token costs. Instead, we enforce prompt guardrails requiring `[Source 1]` inline citations, check that the output is non-empty, and verify it did not trigger an outage sentinel.
+   - *In Automated Evals (`FactCheckingEvaluator.java` & `RagGenerationBenchmarkTest.java`)*: We run a true post-generation groundedness test using **Google Gemini Flash as the LLM Judge** (`judgeType: LLM_GEMINI`) at `temperature: 0.0`.
+2. **How `FactCheckingEvaluator` Works**:
+   - It supplies the retrieved factsheet context, user query, and synthesized answer to Gemini with a strict evaluation prompt.
+   - Gemini inspects every numerical claim (expense ratios, returns, risk ratings). If any claim is unsupported by the context, it scores between `0.0` and `0.5` (`FAIL`). If all claims are backed by the text, it scores `1.0` (`PASS`). The benchmark requires a pass threshold $\ge 0.95$.
+   - Results and execution duration are published via `RagEvaluationTelemetryService`.
+
 ---
 
 #### Customer Management
@@ -641,5 +650,99 @@ Across all three execution strategies, the agent has access to 6 specialized, co
 - **Decoupled Deployment**: The `McpServer` can run in a separate container or microservice and communicate with any remote MCP client over SSE (Server-Sent Events) or Stdio.
 - **Language Agnostic**: Python agents, Node.js agents, Claude Desktop, or Java agents can invoke the exact same CRM tool catalogue without code duplication.
 - **Protocol Compliance**: Leverages official `io.modelcontextprotocol.sdk:mcp` (v0.7.0) models for future standard compatibility.
+
+---
+
+### Token Engineering, Context Budgeting & Cost Control
+
+#### 1. Token Split (Input vs. Output)
+* **Input Tokens (~2,200 – 3,600 tokens total):**
+  * **System Instructions & Guardrails (~150–220 tokens):** Centralized in `SystemInstruction.java` (`RAG_SYNTHESIS_SYSTEM_PROMPT`). Guardrails enforce SEBI compliance, strict grounding, mandatory inline source citations (`[Source 1]`), zero extrapolation/hallucination, and professional advisory tone.
+  * **Dialogue History (~200–400 tokens):** Up to 3 recent conversation turns persisted in PostgreSQL (`rag_conversation_turns` table) and loaded via `RagConversationTurnRepository`.
+  * **Grounded Evidence Chunks (~1,200–1,800 tokens):** Top-ranked factsheet/SID text snippets tagged with source labels like `[Source 1]`. The cutoff is hard-capped to **$K = 5$** chunks (`rag.top-k: 5` in `application.yml`).
+  * **User Query (~100–250 tokens):** The sanitized customer or advisor question.
+* **Output Tokens (~350 – 700 tokens total):**
+  * **Synthesized Answer (~250–450 tokens):** Direct, factual explanation of the fund metrics.
+  * **Inline Citations (~100–250 tokens):** Bracketed references and source disclosures.
+  * **Document Fetch & Storage Link:** The LLM does **not** hallucinate raw pre-signed URLs. When document evidence is referenced or fetched, the backend/agent resolves the document's permanent S3 key from object storage (AWS S3 / LocalStack) and generates a time-bound **pre-signed URL** (15-min TTL) in the API response envelope (`evidenceChunks[].documentUrl`), allowing safe client redirects to the file stored in LocalStack/S3.
+* **Agent Execution:**
+  * Uses smaller, iterative steps: ~700–1,400 input tokens and ~80–250 output tokens per reasoning step (capped at `MAX_STEPS = 8` in `VanillaAgentExecutor.java`).
+
+#### 2. Chatbot Context Window (Approach A: Window Buffer Memory)
+* **What we did:** We store all conversation turns in PostgreSQL (`rag_conversation_turns` table), but we only inject the **last 3 turns** into the prompt (`rag.conversation.max-history-turns: 3`).
+* **Why it matters:** Older chat messages are dropped from the active prompt. This caps the chat history to under 400 tokens, keeping 80%+ of the context window free for actual mutual fund factsheet evidence.
+
+#### 3. Token-Based Pricing & Cost Control
+* **Early Rejection (100% Cost Avoidance):** Before sending a prompt to Gemini, our Evidence Quality Gate checks the vector similarity score. If it falls below the 0.65 threshold, we return a fallback response immediately and **never call the LLM**. This avoids 100% of the token costs on poor or ungrounded queries.
+* **Clamping Output:**
+  * `maxOutputTokens` is capped at 2,048 to prevent runaway generation.
+  * Temperature is set to a low `0.1` so the model stays concise and does not ramble.
+  * Thinking budget is set to 0 (`thinkingBudget: 0`) to avoid paying for internal reasoning tokens on thinking-enabled models.
+
+#### 4. Token Budgeting Fences & Practical Sizing Choices
+* **Why $K = 5$ for Evidence Retrieval (`rag.top-k: 5`):**
+  * Configured as a sensible default in `application.yml` (`rag.top-k: 5`).
+  * Since our factsheet chunks are ~250–300 words each, 5 chunks provide enough material to cover 1 or 2 mutual funds for comparison without bloating the prompt or slowing down generation.
+  * Externalizing it into configuration allows easy adjustments without code redeployments.
+* **Why `MAX_STEPS = 8` for the ReAct Agent (`VanillaAgentExecutor.java`):**
+  * Acts as a defensive circuit breaker to prevent runaway infinite loops and uncontrolled API charges if the model struggles to converge.
+  * In standard execution, the agent takes around 5 steps to collect client info, risk profile, current holdings, search replacements, and stage the draft. A cap of 8 gives the model a couple of extra attempts to self-correct (for instance, if an initial fund search returns no results) before gracefully aborting.
+* **Why Exactly 3 Recent Conversation Turns (`rag.conversation.max-history-turns: 3`):**
+  * Slices the last 3 turns from the database as a sliding window buffer.
+  * In CRM chat, advisors mostly ask immediate follow-up questions about the fund they just queried. Keeping the last 3 turns preserves enough immediate context while ensuring older conversation history doesn't push out the actual fund evidence from the prompt.
+* **How to tune these systematically instead of guessing (Interview Response):**
+  * *For $K$:* Test a sample of 20–30 common advisor questions with $K=3, 5, \text{ and } 8$. If $K=3$ already gives the model the right factsheet pages to answer correctly, lower it to save tokens and speed up latency. If comparing multiple funds needs more pages, keep it at 5.
+  * *For `MAX_STEPS`:* Inspect the database execution logs (`AgentStepRecord`) over 50–100 runs. If almost all successful runs finish within 5–6 steps, 8 is a solid safety cutoff. If legitimate runs frequently need 7 steps, bump it up to 9 or 10 so valid tasks don't get prematurely cancelled.
+  * *For Chat History:* Review real user chat sessions. If users only ask immediate follow-ups (e.g., *"What is its return?"*), 2–3 turns is enough. If users frequently reference messages from 5 turns ago, increase the window or summarize earlier messages.
+
+#### 5. Usage Tracking & Observability
+
+##### A. Prometheus & Micrometer Metrics Breakdown
+
+###### 1. `rag_generation_calls_total`
+* **What it means in plain English:**
+  It is a simple tally counter that increases by +1 every time the backend attempts to call the Google Gemini LLM API.
+* **How it's implemented in plain English:**
+  In `GeminiGenerationService.java`, every time a request is dispatched or encounters an outcome, we call `meterRegistry.counter("rag_generation_calls_total", "model", modelName, "status", status).increment()`. It tags the model name (`gemini-3.8-flash`, `gemini-3.5-flash`) and the result status (`success`, `quota_exhausted`, `cascade_gemini-3.5-flash`, `all_quota_exhausted`).
+* **What it tells you on a Grafana dashboard:**
+  It answers: *"How many total AI requests did we make today?"* and *"Did our primary model hit its quota limit and force traffic over to our backup model?"*
+
+###### 2. `rag_generation_latency_seconds`
+* **What it means in plain English:**
+  It is an execution stopwatch that measures how long Google Gemini takes to process our prompt and return generated text.
+* **How it's implemented in plain English:**
+  In `GeminiGenerationService.java`, we start a timer `Timer.Sample sample = Timer.start(meterRegistry)` before sending the HTTP POST call to Gemini's endpoint, and stop it `sample.stop(Timer.builder("rag_generation_latency_seconds")...)` as soon as the response payload is received.
+* **What it tells you on a Grafana dashboard:**
+  It tracks AI response speed over time (P50, P95, P99). It answers: *"Are advisors waiting 1 second or 5 seconds for AI answers during market opening hours?"*
+
+###### 3. `agent_tool_calls_total`
+* **What it means in plain English:**
+  It counts every individual time our AI Recommendation Agent executes a specific business tool (like searching funds or fetching client risk).
+* **How it's implemented in plain English:**
+  Inside our agent execution loops (`VanillaAgentExecutor.java`, `SpringAiChatClientExecutor.java`, `McpAgentExecutor.java`), whenever a tool is dispatched, we increment `meterRegistry.counter("agent_tool_calls_total", "tool", toolName, "mode", mode).increment()` tagging the specific tool name (`getClientProfile`, `searchEligibleFunds`, `stageDraftProposal`) and the strategy (`vanilla`, `framework`, `mcp`).
+* **What it tells you on a Grafana dashboard:**
+  It shows tool popularity and uncovers execution bugs. For example: *"If `searchEligibleFunds` is called 500 times an hour but `stageDraftProposal` is only called 10 times, is the agent getting stuck in loops?"*
+
+###### 4. `rag_synthesis_total`
+* **What it means in plain English:**
+  It counts every user question processed by the RAG pipeline, categorizing the answer as either `grounded=true` or `grounded=false`.
+* **How it's implemented in plain English:**
+  In `RagSynthesisService.java`:
+  - If the retrieval quality gate fails (similarity $< 0.65$), the LLM is bypassed, a defensive message is returned, and we increment `rag_synthesis_total` with tag `grounded=false`.
+  - If the gate passes and the model produces an answer with citations, we increment `rag_synthesis_total` with tag `grounded=true`.
+  *(Note: For true post-generation factual verification of claims via LLM-as-a-Judge, see [Section 4.F: Groundedness Checks & Fact-Checking Evaluator](#f-groundedness-checks--fact-checking-evaluator-llm-as-a-judge)).*
+* **What it tells you on a Grafana dashboard:**
+  It acts as a business safety scorecard. It answers: *"What percentage of customer queries were backed by authentic regulatory documents versus how often our system had to say 'no matching disclosures found' to prevent hallucinations?"*
+
+##### B. Persistent Logs & Audit Trails
+* **PostgreSQL Conversation Turns:** Every turn is saved in the `rag_conversation_turns` table with query, response, turn index, latency, and grounded flag.
+* **Agent Step Ledger:** The agent's step-by-step reasoning ledger (`AgentStepRecord`) is stored in the database for compliance audits.
+* **Structured JSON Logs:** Slf4j logs structured events that are scraped by Promtail and indexed in Loki for centralized log search.
+
+#### 6. Rate Limits & Quota Exhaustion (HTTP 429)
+* **Transient Load Spikes (HTTP 500, 502, 503, Timeouts):** The server is temporarily overloaded. We retry the **same model** up to 5 times using exponential backoff (2,000ms up to 10,000ms) with 20% random jitter to avoid thundering-herd spikes.
+* **Quota Depletion (HTTP 429 Too Many Requests):** Our rate limit has been reached. Retrying the same model will only fail again. We immediately abort retries and **cascade to the next model in line**:
+  $$\text{gemini-3.8-flash (Primary)} \longrightarrow \text{gemini-3.5-flash (Secondary)} \longrightarrow \text{gemini-flash-latest (Tertiary)}$$
+* **Complete Outage Fallback:** If all models fail or are rate-limited, the system returns a safe sentinel response (`SYNTHESIS_UNAVAILABLE_SENTINEL`) displaying the raw retrieved disclosure factsheets so the advisor can continue working without seeing an error.
 
 
